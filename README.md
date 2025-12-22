@@ -49,10 +49,15 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<div align="center">
-  <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" width="45%">
-  <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" width="45%">
+<div align="center" style="display: flex; justify-content: center; gap: 10px;">
+  <div style="height: 300px; display: flex; align-items: center;">
+    <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" style="max-height: 100%; width: auto;">
+  </div>
+  <div style="height: 300px; display: flex; align-items: center;">
+    <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" style="max-height: 100%; width: auto;">
+  </div>
 </div>
+
 
 <br />
 
