@@ -1,7 +1,3 @@
-Here’s a more laid-back, British English version of your GitHub Code of Conduct:
-
----
-
 # Code of Conduct
 
 ## Our Vibe
