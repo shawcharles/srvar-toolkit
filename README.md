@@ -11,13 +11,20 @@ This package implements a small, testable SRVAR workflow:
 If you need the original MATLAB replication code, see:
 https://github.com/MichaelGrammmatikopoulos/MLSRVARs
  
-## Status
- 
-Implemented:
-- Phase 2: Conjugate NIW Bayesian VAR (BVAR)
-- Phase 3: ELB / shadow-rate data augmentation
-- Phase 4: Diagonal stochastic volatility (SVRW) via KSC mixture + precision-based state sampling
-- Combined: SV + ELB
+## Methodology / capability matrix
+
+| Component | What it does | How to enable | Status |
+| --- | --- | --- | --- |
+| Conjugate BVAR (NIW) | Closed-form posterior updates and fast sampling for VAR coefficients/covariance | `PriorSpec.niw_default(...)` or `PriorSpec.niw_minnesota(...)` | Supported |
+| Minnesota-style shrinkage (NIW) | Minnesota-style shrinkage implemented through an NIW prior construction | `PriorSpec.niw_minnesota(...)` | Supported |
+| Variable selection (SSVS) | Spike-and-slab inclusion indicators for regression rows (stochastic search variable selection) | `PriorSpec.ssvs(...)` (with `PriorSpec.family='ssvs'`) | Supported |
+| Shadow-rate / ELB augmentation | Latent shadow-rate sampling when an observed rate is at/near an ELB (data augmentation Gibbs) | `ModelSpec(elb=ElbSpec(...))` | Supported |
+| Stochastic volatility (SVRW, diagonal) | Diagonal log-volatility random-walk state model (KSC mixture + precision-based sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
+| Combined ELB + SV | Joint latent shadow-rate augmentation with diagonal SVRW | `ModelSpec(elb=..., volatility=...)` | Supported |
+| Forecasting | Posterior predictive simulation + mean/quantiles (with ELB flooring applied to constrained variables) | `srvar.api.forecast(...)` | Supported |
+| Steady states | Steady-state VAR / explicit steady-state parameterization | N/A | Not implemented |
+| Bayesian LASSO prior | LASSO-type shrinkage prior | N/A | Not implemented |
+| Dirichlet-Laplace prior | Dirichlet-Laplace shrinkage prior | N/A | Not implemented |
 
 ## Install
 

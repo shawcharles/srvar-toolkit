@@ -20,6 +20,17 @@ FAQ
 
 ```{toctree}
 :maxdepth: 2
+:caption: Theory
+
+theory/shadow-rate-var
+theory/elb
+theory/stochastic-volatility
+theory/variable-selection
+theory/mcmc
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: Reference
 
 reference/api
