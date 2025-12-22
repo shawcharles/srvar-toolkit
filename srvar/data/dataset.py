@@ -9,6 +9,29 @@ import pandas as pd
 
 @dataclass(frozen=True, slots=True)
 class Dataset:
+    """A lightweight container for multivariate time series data.
+
+    The library consistently represents a dataset as a matrix ``values`` with shape
+    ``(T, N)``, where:
+
+    - ``T`` is the number of time points (observations)
+    - ``N`` is the number of variables (series)
+
+    Parameters
+    ----------
+    time_index:
+        Time index for the observations. Can be a :class:`pandas.Index` (e.g. a
+        :class:`pandas.DatetimeIndex`) or anything coercible to one.
+    variables:
+        Variable names of length ``N``.
+    values:
+        Numeric array of shape ``(T, N)``.
+
+    Notes
+    -----
+    The class is immutable (``frozen=True``) and performs validation in
+    :meth:`~Dataset.__post_init__`.
+    """
     time_index: pd.Index
     variables: list[str]
     values: np.ndarray
@@ -20,6 +43,29 @@ class Dataset:
         variables: Sequence[str],
         time_index: Iterable[object] | pd.Index | None = None,
     ) -> "Dataset":
+        """Construct a :class:`~srvar.data.dataset.Dataset` from array-like inputs.
+
+        Parameters
+        ----------
+        values:
+            A numeric array of shape ``(T, N)``.
+        variables:
+            Sequence of variable names of length ``N``.
+        time_index:
+            Optional time index. If omitted, a :class:`pandas.RangeIndex` with
+            ``start=0`` is used.
+
+        Returns
+        -------
+        Dataset
+            Validated dataset instance.
+
+        Raises
+        ------
+        ValueError
+            If shapes are inconsistent (e.g. ``len(variables) != values.shape[1]``)
+            or if ``values`` is not two-dimensional.
+        """
         x = np.asarray(values, dtype=float)
         if x.ndim != 2:
             raise ValueError("values must be a 2D array of shape (T, N)")
@@ -54,8 +100,10 @@ class Dataset:
 
     @property
     def T(self) -> int:
+        """Number of time points (rows) in the dataset."""
         return int(self.values.shape[0])
 
     @property
     def N(self) -> int:
+        """Number of variables (columns) in the dataset."""
         return int(self.values.shape[1])

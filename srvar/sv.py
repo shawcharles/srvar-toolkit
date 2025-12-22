@@ -11,6 +11,26 @@ from .linalg import cholesky_jitter, solve_psd, symmetrize
 
 @dataclass(frozen=True, slots=True)
 class VolatilitySpec:
+    """Stochastic volatility configuration (SV random walk; diagonal).
+
+    When enabled in :class:`srvar.spec.ModelSpec`, estimation uses a diagonal
+    stochastic volatility random-walk (SVRW) model for the VAR residual variances.
+
+    Parameters
+    ----------
+    enabled:
+        Whether stochastic volatility is enabled.
+    epsilon:
+        Small positive constant used in the transform
+        ``log(e_t^2 + epsilon)`` to avoid ``log(0)``.
+    h0_prior_mean:
+        Prior mean for the initial log-variance state ``h0``.
+    h0_prior_var:
+        Prior variance for the initial log-variance state ``h0``.
+    sigma_eta_prior_nu0, sigma_eta_prior_s0:
+        Prior hyperparameters for the innovation variance of the log-volatility
+        random walk.
+    """
     enabled: bool = True
     epsilon: float = 1e-4
     h0_prior_mean: float = 1e-6
@@ -41,11 +61,41 @@ _LOG_SQRT_2PI = 0.5 * np.log(2.0 * np.pi)
 
 
 def log_e2_star(e: np.ndarray, *, epsilon: float) -> np.ndarray:
+    """Compute the log-squared residual transform used for SV mixture sampling.
+
+    Given residuals ``e_t``, this returns ``log(e_t^2 + epsilon)``. The small ``epsilon``
+    avoids ``log(0)`` and stabilizes sampling when residuals are extremely small.
+    """
     v = np.asarray(e, dtype=float)
     return np.log(v * v + float(epsilon))
 
 
 def sample_mixture_indicators(*, y_star: np.ndarray, h: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Sample KSC mixture indicators for the log-chi-square approximation.
+
+    This implements the standard Kim-Shephard-Chib (KSC) 7-component Gaussian mixture
+    approximation for the observation equation arising from:
+
+        y*_t = log(e_t^2)  with  e_t ~ N(0, exp(h_t))
+
+    Conditional on a discrete indicator ``s_t`` taking values in {0, ..., 6}, the model is:
+
+        y*_t = h_t + m_{s_t} + u_t,   u_t ~ N(0, v_{s_t})
+
+    where ``(pi, m, v)`` are fixed mixture weights/means/variances.
+
+    Notes:
+        The constant ``1.2704`` used in the mixture mean vector definition corresponds to
+        ``E[log(chi^2_1)]`` and is used to match the centered form commonly reported for the
+        KSC approximation.
+
+    References:
+        Kim, S., Shephard, N., & Chib, S. (1998). Stochastic volatility: Likelihood
+        inference and comparison with ARCH models.
+
+    Returns:
+        Integer array of shape (T,) with entries in {0, ..., 6}.
+    """
     y = np.asarray(y_star, dtype=float).reshape(-1)
     ht = np.asarray(h, dtype=float).reshape(-1)
 
@@ -73,6 +123,26 @@ def sample_h_svrw(
     h0: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
+    """Sample a full path of log-volatilities under an SV random-walk prior.
+
+    This updates ``h = (h_1, ..., h_T)`` in the SVRW model
+
+        y*_t = log(e_t^2) \approx h_t + m_{s_t} + u_t
+        h_t = h_{t-1} + eta_t,    eta_t ~ N(0, sigma_eta2)
+
+    using the KSC mixture approximation and a precision-based Gaussian sampler for the
+    resulting banded linear system.
+
+    Args:
+        y_star: Transformed residuals (T,).
+        h: Current log-volatility values (T,).
+        sigma_eta2: Innovation variance for the random walk.
+        h0: Initial state value used in the prior for h_1.
+        rng: NumPy RNG.
+
+    Returns:
+        Updated log-volatility path with shape (T,).
+    """
     y = np.asarray(y_star, dtype=float).reshape(-1)
     ht = np.asarray(h, dtype=float).reshape(-1)
 

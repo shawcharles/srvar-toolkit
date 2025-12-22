@@ -22,13 +22,16 @@ def test_invariants_phase2_bvar() -> None:
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(999))
 
     assert fit_res.posterior is not None
+    assert fit_res.latent_draws is None
     assert fit_res.beta_draws is not None
     assert fit_res.sigma_draws is not None
     assert fit_res.h_draws is None
     assert fit_res.sigma_eta2_draws is None
+    assert fit_res.gamma_draws is None
 
     fc = forecast(fit_res, horizons=[1, 3], draws=30, rng=np.random.default_rng(2024))
     assert fc.draws.shape == (30, 3, ds.N)
+    assert fc.latent_draws is None
 
 
 def test_invariants_phase3_elb() -> None:
@@ -47,12 +50,15 @@ def test_invariants_phase3_elb() -> None:
 
     assert fit_res.posterior is not None
     assert fit_res.latent_dataset is not None
+    assert fit_res.latent_draws is not None
     assert fit_res.beta_draws is not None
     assert fit_res.sigma_draws is not None
     assert fit_res.h_draws is None
+    assert fit_res.gamma_draws is None
 
     fc = forecast(fit_res, horizons=[1, 3], draws=30, rng=np.random.default_rng(2024))
     assert np.all(fc.draws[:, :, 0] >= elb_bound - 1e-12)
+    assert fc.latent_draws is not None
 
 
 def test_invariants_phase4_sv() -> None:
@@ -65,11 +71,13 @@ def test_invariants_phase4_sv() -> None:
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(999))
 
     assert fit_res.posterior is None
+    assert fit_res.latent_draws is None
     assert fit_res.beta_draws is not None
     assert fit_res.sigma_draws is None
     assert fit_res.h_draws is not None
     assert fit_res.h0_draws is not None
     assert fit_res.sigma_eta2_draws is not None
+    assert fit_res.gamma_draws is None
 
     fc = forecast(fit_res, horizons=[1, 3], draws=30, rng=np.random.default_rng(2024))
     assert fc.draws.shape == (30, 3, ds.N)
@@ -96,8 +104,10 @@ def test_invariants_phase4_sv_elb() -> None:
 
     assert fit_res.posterior is None
     assert fit_res.latent_dataset is not None
+    assert fit_res.latent_draws is not None
     assert fit_res.beta_draws is not None
     assert fit_res.h_draws is not None
+    assert fit_res.gamma_draws is None
 
     fc = forecast(fit_res, horizons=[1, 3], draws=30, rng=np.random.default_rng(2024))
     assert np.all(fc.draws[:, :, 0] >= elb_bound - 1e-12)

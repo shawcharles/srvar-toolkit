@@ -63,3 +63,6 @@ memory-bank/
 papers/
 
 assets/paper
+.env
+
+docs/code-review-2024-12.md

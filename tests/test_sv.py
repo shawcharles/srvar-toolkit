@@ -106,6 +106,7 @@ def test_phase4_sv_fit_and_forecast_shapes_and_finiteness() -> None:
     assert fit_res.beta_draws is not None
     assert fit_res.h_draws is not None
     assert fit_res.sigma_eta2_draws is not None
+    assert fit_res.latent_draws is None
     assert fit_res.beta_draws.shape[1:] == (1 + n * model.p, n)
     assert fit_res.h_draws.shape[1:] == (t - model.p, n)
     assert fit_res.sigma_eta2_draws.shape[1:] == (n,)
@@ -114,6 +115,7 @@ def test_phase4_sv_fit_and_forecast_shapes_and_finiteness() -> None:
     fc = forecast(fit_res, horizons=[1, 4], draws=40, rng=np.random.default_rng(2024))
     assert fc.draws.shape == (40, 4, 2)
     assert np.all(np.isfinite(fc.draws))
+    assert fc.latent_draws is None
 
 
 def test_phase4_sv_elb_fit_and_forecast_respects_floor() -> None:
@@ -147,7 +149,9 @@ def test_phase4_sv_elb_fit_and_forecast_respects_floor() -> None:
 
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(111))
     assert fit_res.latent_dataset is not None
+    assert fit_res.latent_draws is not None
 
     fc = forecast(fit_res, horizons=[1, 5], draws=40, rng=np.random.default_rng(2025))
     assert fc.draws.shape == (40, 5, 2)
     assert np.all(fc.draws[:, :, 0] >= elb_bound - 1e-12)
+    assert fc.latent_draws is not None

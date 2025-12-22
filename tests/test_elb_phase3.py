@@ -30,6 +30,9 @@ def test_phase3_elb_fit_and_forecast_respects_floor() -> None:
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(999))
 
     assert fit_res.latent_dataset is not None
+    assert fit_res.latent_draws is not None
+    assert fit_res.latent_draws.ndim == 3
+    assert fit_res.latent_draws.shape[1:] == (t, n)
 
     # At bound observations, latent should be <= bound
     rate_obs = ds.values[:, 0]
@@ -41,3 +44,4 @@ def test_phase3_elb_fit_and_forecast_respects_floor() -> None:
 
     # Forecast draws returned are observed (ELB floor applied)
     assert np.all(fc.draws[:, :, 0] >= bound - 1e-12)
+    assert fc.latent_draws is not None

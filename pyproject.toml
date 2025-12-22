@@ -57,6 +57,11 @@ plot = [
   "matplotlib>=3.8",
 ]
 
+fred = [
+  "requests>=2.31",
+  "python-dotenv>=1.0",
+]
+
 accel = [
   "numba>=0.60",
 ]

@@ -12,6 +12,24 @@ def v0_diag_from_gamma(
     slab_var: float,
     intercept_slab_var: float | None = None,
 ) -> np.ndarray:
+    """Compute the diagonal of V0 implied by spike-and-slab indicators.
+
+    Parameters
+    ----------
+    gamma:
+        Boolean inclusion indicators of shape ``(K,)``.
+    spike_var:
+        Variance for excluded predictors.
+    slab_var:
+        Variance for included predictors.
+    intercept_slab_var:
+        Optional override for the intercept variance (index 0).
+
+    Returns
+    -------
+    np.ndarray
+        Vector of length ``K`` representing the diagonal of ``V0``.
+    """
     g = np.asarray(gamma, dtype=bool)
     if g.ndim != 1:
         raise ValueError("gamma must be a 1D array")
@@ -42,6 +60,33 @@ def sample_gamma_rows(
     fixed_mask: np.ndarray | None = None,
     rng: np.random.Generator,
 ) -> np.ndarray:
+    """Sample SSVS inclusion indicators for coefficient rows.
+
+    This updates ``gamma`` given the current coefficient draw ``beta`` and covariance
+    ``sigma`` under a spike-and-slab prior.
+
+    Parameters
+    ----------
+    beta:
+        VAR coefficient matrix of shape ``(K, N)``.
+    sigma:
+        Innovation covariance matrix of shape ``(N, N)``.
+    gamma:
+        Current inclusion indicators of shape ``(K,)``.
+    spike_var, slab_var:
+        Spike-and-slab prior variances.
+    inclusion_prob:
+        Prior inclusion probability.
+    fixed_mask:
+        Optional boolean mask indicating predictors which are forced to stay included.
+    rng:
+        NumPy RNG.
+
+    Returns
+    -------
+    np.ndarray
+        Updated boolean indicators of shape ``(K,)``.
+    """
     b = np.asarray(beta, dtype=float)
     s = np.asarray(sigma, dtype=float)
     g = np.asarray(gamma, dtype=bool)

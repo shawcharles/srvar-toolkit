@@ -1,15 +1,21 @@
 # Installation
 
-## Install from PyPI
-
-```bash
-pip install srvar-toolkit
-```
-
-## Editable install (development)
+## Install from source
 
 ```bash
 pip install -e .
+```
+
+## Optional: plotting dependencies
+
+```bash
+pip install -e ".[plot]"
+```
+
+## Optional: FRED/ALFRED data access
+
+```bash
+pip install -e ".[fred]"
 ```
 
 ## Install docs dependencies

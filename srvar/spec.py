@@ -11,6 +11,27 @@ import numpy as np
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
+    """Model configuration for VAR/SRVAR estimation.
+
+    Parameters
+    ----------
+    p:
+        VAR lag order.
+    include_intercept:
+        Whether to include an intercept term in the VAR design matrix.
+    elb:
+        Optional effective-lower-bound (ELB) configuration. When enabled, specified
+        variables are treated as censored at the bound and latent shadow values are
+        sampled during estimation.
+    volatility:
+        Optional stochastic volatility configuration. When enabled, the model uses a
+        diagonal stochastic volatility random-walk (SVRW) specification.
+
+    Notes
+    -----
+    ``ModelSpec`` is intentionally small and immutable. The heavy lifting is done in
+    :func:`srvar.api.fit`.
+    """
     p: int
     include_intercept: bool = True
     elb: ElbSpec | None = None
@@ -23,6 +44,18 @@ class ModelSpec:
 
 @dataclass(frozen=True, slots=True)
 class NIWPrior:
+    """Normal-Inverse-Wishart (NIW) prior parameters.
+
+    This prior is used for conjugate Bayesian VAR estimation.
+
+    Notes
+    -----
+    Shapes follow the conventions used throughout the toolkit:
+
+    - ``m0`` has shape ``(K, N)`` where ``K = (1 if include_intercept else 0) + N * p``
+    - ``v0`` has shape ``(K, K)``
+    - ``s0`` has shape ``(N, N)``
+    """
     m0: np.ndarray  # (K, N)
     v0: np.ndarray  # (K, K)
     s0: np.ndarray  # (N, N)
@@ -31,6 +64,25 @@ class NIWPrior:
 
 @dataclass(frozen=True, slots=True)
 class SSVSSpec:
+    """Hyperparameters for stochastic search variable selection (SSVS).
+
+    The SSVS implementation uses a spike-and-slab Gaussian prior over coefficient
+    rows (predictor-specific inclusion indicators).
+
+    Parameters
+    ----------
+    spike_var:
+        Prior variance for excluded predictors (spike component).
+    slab_var:
+        Prior variance for included predictors (slab component).
+    inclusion_prob:
+        Prior inclusion probability for each predictor.
+    intercept_slab_var:
+        Optional slab variance override for the intercept term.
+    fix_intercept:
+        If True and an intercept is included in the model, the intercept is always
+        included.
+    """
     spike_var: float = 1e-4
     slab_var: float = 100.0
     inclusion_prob: float = 0.5
@@ -50,12 +102,40 @@ class SSVSSpec:
 
 @dataclass(frozen=True, slots=True)
 class PriorSpec:
+    """Prior specification wrapper.
+
+    This object selects the prior family via ``family`` and carries the required
+    parameter blocks.
+
+    Parameters
+    ----------
+    family:
+        Prior family identifier. Currently supported values are ``"niw"`` and
+        ``"ssvs"``.
+    niw:
+        NIW parameter block. This is required for both families because SSVS uses
+        a NIW-like structure with a modified coefficient covariance ``V0``.
+    ssvs:
+        Optional SSVS hyperparameters (required when ``family='ssvs'``).
+    """
     family: str
     niw: NIWPrior
     ssvs: SSVSSpec | None = None
 
     @staticmethod
     def niw_default(*, k: int, n: int) -> "PriorSpec":
+        """Construct a simple default NIW prior.
+
+        This uses a zero prior mean for coefficients and relatively weak
+        regularization.
+
+        Parameters
+        ----------
+        k:
+            Number of regressors ``K``.
+        n:
+            Number of endogenous variables ``N``.
+        """
         m0 = np.zeros((k, n), dtype=float)
         v0 = 10.0 * np.eye(k, dtype=float)
         s0 = np.eye(n, dtype=float)
@@ -77,6 +157,33 @@ class PriorSpec:
         own_lag_mean: float = 0.0,
         min_sigma2: float = 1e-12,
     ) -> "PriorSpec":
+        """Construct an NIW prior with Minnesota-style shrinkage.
+
+        The Minnesota prior shrinks coefficients toward a random-walk/white-noise
+        baseline, with lag-decay and cross-variable shrinkage controlled by
+        ``lambda1..lambda4``.
+
+        Parameters
+        ----------
+        p:
+            VAR lag order.
+        y:
+            Data array used to estimate scaling variances (T, N).
+        include_intercept:
+            Whether the resulting prior is compatible with a VAR that includes an
+            intercept.
+        lambda1, lambda2, lambda3, lambda4:
+            Standard Minnesota hyperparameters.
+        own_lag_means / own_lag_mean:
+            Optional prior mean(s) for own first lag.
+        min_sigma2:
+            Floor for estimated variances used in scaling.
+
+        Returns
+        -------
+        PriorSpec
+            A ``PriorSpec`` instance with ``family='niw'``.
+        """
         v = np.asarray(y, dtype=float)
         if v.ndim != 2:
             raise ValueError("y must be a 2D array of shape (T, N)")
@@ -147,7 +254,7 @@ class PriorSpec:
         return PriorSpec(family="niw", niw=NIWPrior(m0=m0, v0=v0, s0=s0, nu0=nu0))
 
     @staticmethod
-    def ssvs(
+    def from_ssvs(
         *,
         k: int,
         n: int,
@@ -161,6 +268,25 @@ class PriorSpec:
         intercept_slab_var: float | None = None,
         fix_intercept: bool = True,
     ) -> "PriorSpec":
+        """Construct a prior specification for SSVS estimation.
+
+        Parameters
+        ----------
+        k:
+            Number of regressors ``K``.
+        n:
+            Number of endogenous variables ``N``.
+        include_intercept:
+            Whether the corresponding model includes an intercept.
+        m0, s0, nu0:
+            Optional NIW blocks. If omitted, sensible defaults are used.
+        spike_var, slab_var, inclusion_prob:
+            SSVS hyperparameters.
+        intercept_slab_var:
+            Optional slab variance override for the intercept coefficient row.
+        fix_intercept:
+            Whether to force inclusion of the intercept row.
+        """
         if k < 1:
             raise ValueError("k must be >= 1")
         if n < 1:
@@ -200,6 +326,23 @@ class PriorSpec:
 
 @dataclass(frozen=True, slots=True)
 class SamplerConfig:
+    """MCMC configuration for Gibbs samplers.
+
+    Parameters
+    ----------
+    draws:
+        Total number of iterations to run.
+    burn_in:
+        Number of initial iterations to discard.
+    thin:
+        Keep every ``thin``-th draw after burn-in.
+
+    Notes
+    -----
+    For conjugate NIW estimation (no ELB/SV), draws are sampled directly and then
+    burn-in/thinning is applied post hoc. For iterative samplers (ELB, SSVS, SV),
+    burn-in/thinning is applied online.
+    """
     draws: int = 2000
     burn_in: int = 500
     thin: int = 1

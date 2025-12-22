@@ -12,223 +12,248 @@ from .sv import log_e2_star, sample_beta_svrw, sample_h0, sample_h_svrw, sample_
 from .var import design_matrix
 
 
-def fit(
+def _fit_svrw(
+    *,
     dataset: Dataset,
     model: ModelSpec,
     prior: PriorSpec,
     sampler: SamplerConfig,
-    *,
-    rng: np.random.Generator | None = None,
+    rng: np.random.Generator,
 ) -> FitResult:
-    prior_family = prior.family.lower()
-    if prior_family not in {"niw", "ssvs"}:
-        raise ValueError("only prior.family in {'niw','ssvs'} is supported")
+    vol = model.volatility
+    if vol is None or not vol.enabled:
+        raise ValueError("volatility must be enabled")
 
-    if rng is None:
-        rng = np.random.default_rng()
+    applies_to_idx: list[int] = []
+    elb_t_idx: dict[int, np.ndarray] = {}
 
-    if model.volatility is not None and model.volatility.enabled:
-        if prior_family != "niw":
-            raise ValueError("stochastic volatility currently requires prior.family='niw'")
-        vol = model.volatility
+    y_lat = dataset.values.copy()
+    if model.elb is not None and model.elb.enabled:
+        for name in model.elb.applies_to:
+            try:
+                applies_to_idx.append(dataset.variables.index(name))
+            except ValueError as e:
+                raise ValueError(f"elb.applies_to contains unknown variable: {name}") from e
 
-        applies_to_idx: list[int] = []
-        elb_t_idx: dict[int, np.ndarray] = {}
+        for j in applies_to_idx:
+            mask = dataset.values[:, j] <= (model.elb.bound + model.elb.tol)
+            elb_t_idx[j] = np.where(mask)[0]
+            y_lat[mask, j] = model.elb.bound - 0.05
 
-        y_lat = dataset.values.copy()
-        if model.elb is not None and model.elb.enabled:
-            for name in model.elb.applies_to:
-                try:
-                    applies_to_idx.append(dataset.variables.index(name))
-                except ValueError as e:
-                    raise ValueError(f"elb.applies_to contains unknown variable: {name}") from e
+    x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
+    t_eff, n = y.shape
 
-            for j in applies_to_idx:
-                mask = dataset.values[:, j] <= (model.elb.bound + model.elb.tol)
-                elb_t_idx[j] = np.where(mask)[0]
-                y_lat[mask, j] = model.elb.bound - 0.05
+    niw = prior.niw
+    mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
+    beta = mn.copy()
 
+    h0 = np.log(np.var(y, axis=0) + 1e-12)
+    h = np.tile(h0.reshape(1, -1), (t_eff, 1))
+    sigma_eta2 = 0.05 * np.ones(n, dtype=float)
+
+    beta_keep: list[np.ndarray] = []
+    h_keep: list[np.ndarray] = []
+    h0_keep: list[np.ndarray] = []
+    sigma_eta2_keep: list[np.ndarray] = []
+    y_lat_keep: list[np.ndarray] | None = [] if (model.elb is not None and model.elb.enabled) else None
+
+    for it in range(sampler.draws):
         x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
-        t_eff, n = y.shape
 
-        niw = prior.niw
-        mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
-        beta = mn.copy()
+        beta = sample_beta_svrw(x=x, y=y, m0=niw.m0, v0=niw.v0, h=h, rng=rng)
 
-        h0 = np.log(np.var(y, axis=0) + 1e-12)
-        h = np.tile(h0.reshape(1, -1), (t_eff, 1))
-        sigma_eta2 = 0.05 * np.ones(n, dtype=float)
+        if model.elb is not None and model.elb.enabled:
+            h_full = np.vstack([np.tile(h0.reshape(1, -1), (model.p, 1)), h])
+            for j in applies_to_idx:
+                for t in elb_t_idx[j]:
+                    y_lat[t, j] = sample_shadow_value_svrw(
+                        y=y_lat,
+                        h=h_full,
+                        t=int(t),
+                        j=int(j),
+                        p=model.p,
+                        beta=beta,
+                        upper=model.elb.bound,
+                        include_intercept=model.include_intercept,
+                        rng=rng,
+                    )
 
-        beta_keep: list[np.ndarray] = []
-        h_keep: list[np.ndarray] = []
-        h0_keep: list[np.ndarray] = []
-        sigma_eta2_keep: list[np.ndarray] = []
-
-        for it in range(sampler.draws):
             x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
 
-            beta = sample_beta_svrw(x=x, y=y, m0=niw.m0, v0=niw.v0, h=h, rng=rng)
+        e = y - x @ beta
 
-            if model.elb is not None and model.elb.enabled:
-                h_full = np.vstack([np.tile(h0.reshape(1, -1), (model.p, 1)), h])
-                for j in applies_to_idx:
-                    for t in elb_t_idx[j]:
-                        y_lat[t, j] = sample_shadow_value_svrw(
-                            y=y_lat,
-                            h=h_full,
-                            t=int(t),
-                            j=int(j),
-                            p=model.p,
-                            beta=beta,
-                            upper=model.elb.bound,
-                            include_intercept=model.include_intercept,
-                            rng=rng,
-                        )
+        for i in range(n):
+            y_star = log_e2_star(e[:, i], epsilon=vol.epsilon)
+            h[:, i] = sample_h_svrw(
+                y_star=y_star,
+                h=h[:, i],
+                sigma_eta2=float(sigma_eta2[i]),
+                h0=float(h0[i]),
+                rng=rng,
+            )
+            h0[i] = sample_h0(
+                h1=float(h[0, i]),
+                sigma_eta2=float(sigma_eta2[i]),
+                prior_mean=vol.h0_prior_mean,
+                prior_var=vol.h0_prior_var,
+                rng=rng,
+            )
+            sigma_eta2[i] = sample_sigma_eta2(
+                h=h[:, i],
+                h0=float(h0[i]),
+                nu0=vol.sigma_eta_prior_nu0,
+                s0=vol.sigma_eta_prior_s0,
+                rng=rng,
+            )
 
-                x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
+        if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
+            beta_keep.append(beta.copy())
+            h_keep.append(h.copy())
+            h0_keep.append(h0.copy())
+            sigma_eta2_keep.append(sigma_eta2.copy())
+            if y_lat_keep is not None:
+                y_lat_keep.append(y_lat.copy())
 
-            e = y - x @ beta
+    latent_dataset = None
+    if model.elb is not None and model.elb.enabled:
+        latent_dataset = Dataset.from_arrays(values=y_lat, variables=dataset.variables, time_index=dataset.time_index)
 
-            for i in range(n):
-                y_star = log_e2_star(e[:, i], epsilon=vol.epsilon)
-                h[:, i] = sample_h_svrw(y_star=y_star, h=h[:, i], sigma_eta2=float(sigma_eta2[i]), h0=float(h0[i]), rng=rng)
-                h0[i] = sample_h0(
-                    h1=float(h[0, i]),
-                    sigma_eta2=float(sigma_eta2[i]),
-                    prior_mean=vol.h0_prior_mean,
-                    prior_var=vol.h0_prior_var,
-                    rng=rng,
-                )
-                sigma_eta2[i] = sample_sigma_eta2(
-                    h=h[:, i],
-                    h0=float(h0[i]),
-                    nu0=vol.sigma_eta_prior_nu0,
-                    s0=vol.sigma_eta_prior_s0,
-                    rng=rng,
-                )
+    return FitResult(
+        dataset=dataset,
+        model=model,
+        prior=prior,
+        sampler=sampler,
+        posterior=None,
+        latent_dataset=latent_dataset,
+        latent_draws=np.stack(y_lat_keep) if y_lat_keep else None,
+        beta_draws=np.stack(beta_keep) if beta_keep else None,
+        sigma_draws=None,
+        h_draws=np.stack(h_keep) if h_keep else None,
+        h0_draws=np.stack(h0_keep) if h0_keep else None,
+        sigma_eta2_draws=np.stack(sigma_eta2_keep) if sigma_eta2_keep else None,
+    )
 
-            if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta.copy())
-                h_keep.append(h.copy())
-                h0_keep.append(h0.copy())
-                sigma_eta2_keep.append(sigma_eta2.copy())
 
-        latent_dataset = None
-        if model.elb is not None and model.elb.enabled:
-            latent_dataset = Dataset.from_arrays(values=y_lat, variables=dataset.variables, time_index=dataset.time_index)
+def _fit_no_elb(
+    *,
+    dataset: Dataset,
+    model: ModelSpec,
+    prior: PriorSpec,
+    sampler: SamplerConfig,
+    prior_family: str,
+    rng: np.random.Generator,
+) -> FitResult:
+    x, y = design_matrix(dataset.values, model.p, include_intercept=model.include_intercept)
+
+    niw = prior.niw
+    if prior_family == "niw":
+        mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
+
+        posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+
+        beta_all, sigma_all = sample_posterior_niw(
+            mn=mn,
+            vn=vn,
+            sn=sn,
+            nun=nun,
+            draws=sampler.draws,
+            rng=rng,
+        )
+        keep_idx = np.arange(sampler.burn_in, sampler.draws, sampler.thin, dtype=int)
+        beta_keep = beta_all[keep_idx] if keep_idx.size > 0 else None
+        sigma_keep = sigma_all[keep_idx] if keep_idx.size > 0 else None
 
         return FitResult(
             dataset=dataset,
             model=model,
             prior=prior,
             sampler=sampler,
-            posterior=None,
-            latent_dataset=latent_dataset,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=None,
-            h_draws=np.stack(h_keep) if h_keep else None,
-            h0_draws=np.stack(h0_keep) if h0_keep else None,
-            sigma_eta2_draws=np.stack(sigma_eta2_keep) if sigma_eta2_keep else None,
+            posterior=posterior,
+            beta_draws=beta_keep,
+            sigma_draws=sigma_keep,
         )
 
-    if model.elb is None or not model.elb.enabled:
-        x, y = design_matrix(dataset.values, model.p, include_intercept=model.include_intercept)
+    if prior.ssvs is None:
+        raise ValueError("prior.family='ssvs' requires prior.ssvs")
 
-        niw = prior.niw
-        if prior_family == "niw":
-            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
+    spec = prior.ssvs
+    _t_eff, k = x.shape
+    _n = y.shape[1]
+    if niw.m0.shape != (k, _n):
+        raise ValueError("ssvs requires prior.niw.m0 with shape (K, N)")
+    if niw.s0.shape != (_n, _n):
+        raise ValueError("ssvs requires prior.niw.s0 with shape (N, N)")
 
-            posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+    gamma = rng.uniform(size=k) < spec.inclusion_prob
+    fixed_mask = np.zeros(k, dtype=bool)
+    if model.include_intercept and spec.fix_intercept:
+        fixed_mask[0] = True
+        gamma[0] = True
 
-            beta_all, sigma_all = sample_posterior_niw(
-                mn=mn,
-                vn=vn,
-                sn=sn,
-                nun=nun,
-                draws=sampler.draws,
-                rng=rng,
-            )
-            keep_idx = np.arange(sampler.burn_in, sampler.draws, sampler.thin, dtype=int)
-            beta_keep = beta_all[keep_idx] if keep_idx.size > 0 else None
-            sigma_keep = sigma_all[keep_idx] if keep_idx.size > 0 else None
+    beta_keep: list[np.ndarray] = []
+    sigma_keep: list[np.ndarray] = []
+    gamma_keep: list[np.ndarray] = []
+    last_posterior: PosteriorNIW | None = None
 
-            return FitResult(
-                dataset=dataset,
-                model=model,
-                prior=prior,
-                sampler=sampler,
-                posterior=posterior,
-                beta_draws=beta_keep,
-                sigma_draws=sigma_keep,
-            )
+    for it in range(sampler.draws):
+        v0_diag = v0_diag_from_gamma(
+            gamma=gamma,
+            spike_var=spec.spike_var,
+            slab_var=spec.slab_var,
+            intercept_slab_var=spec.intercept_slab_var,
+        )
+        v0 = np.diag(v0_diag)
 
-        if prior.ssvs is None:
-            raise ValueError("prior.family='ssvs' requires prior.ssvs")
+        mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
+        last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-        spec = prior.ssvs
-        t_eff, k = x.shape
-        _n = y.shape[1]
-        if niw.m0.shape != (k, _n):
-            raise ValueError("ssvs requires prior.niw.m0 with shape (K, N)")
-        if niw.s0.shape != (_n, _n):
-            raise ValueError("ssvs requires prior.niw.s0 with shape (N, N)")
+        beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+        beta = beta_draws[0]
+        sigma = sigma_draws[0]
 
-        gamma = rng.uniform(size=k) < spec.inclusion_prob
-        fixed_mask = np.zeros(k, dtype=bool)
-        if model.include_intercept and spec.fix_intercept:
-            fixed_mask[0] = True
-            gamma[0] = True
-
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        last_posterior: PosteriorNIW | None = None
-
-        for it in range(sampler.draws):
-            v0_diag = v0_diag_from_gamma(
-                gamma=gamma,
-                spike_var=spec.spike_var,
-                slab_var=spec.slab_var,
-                intercept_slab_var=spec.intercept_slab_var,
-            )
-            v0 = np.diag(v0_diag)
-
-            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
-            last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-
-            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
-            beta = beta_draws[0]
-            sigma = sigma_draws[0]
-
-            gamma = sample_gamma_rows(
-                beta=beta,
-                sigma=sigma,
-                gamma=gamma,
-                spike_var=spec.spike_var,
-                slab_var=spec.slab_var,
-                inclusion_prob=spec.inclusion_prob,
-                fixed_mask=fixed_mask,
-                rng=rng,
-            )
-
-            if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta.copy())
-                sigma_keep.append(sigma.copy())
-
-        if last_posterior is None:
-            raise RuntimeError("sampler.draws produced no posterior")
-
-        return FitResult(
-            dataset=dataset,
-            model=model,
-            prior=prior,
-            sampler=sampler,
-            posterior=last_posterior,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+        gamma = sample_gamma_rows(
+            beta=beta,
+            sigma=sigma,
+            gamma=gamma,
+            spike_var=spec.spike_var,
+            slab_var=spec.slab_var,
+            inclusion_prob=spec.inclusion_prob,
+            fixed_mask=fixed_mask,
+            rng=rng,
         )
 
-    # Phase 3: ELB data-augmentation Gibbs
+        if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
+            beta_keep.append(beta.copy())
+            sigma_keep.append(sigma.copy())
+            gamma_keep.append(gamma.copy())
+
+    if last_posterior is None:
+        raise RuntimeError("sampler.draws produced no posterior")
+
+    return FitResult(
+        dataset=dataset,
+        model=model,
+        prior=prior,
+        sampler=sampler,
+        posterior=last_posterior,
+        beta_draws=np.stack(beta_keep) if beta_keep else None,
+        sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+        gamma_draws=np.stack(gamma_keep) if gamma_keep else None,
+    )
+
+
+def _fit_elb_gibbs(
+    *,
+    dataset: Dataset,
+    model: ModelSpec,
+    prior: PriorSpec,
+    sampler: SamplerConfig,
+    prior_family: str,
+    rng: np.random.Generator,
+) -> FitResult:
     elb = model.elb
+    if elb is None or not elb.enabled:
+        raise ValueError("elb must be enabled")
 
     applies_to_idx: list[int] = []
     for name in elb.applies_to:
@@ -237,7 +262,6 @@ def fit(
         except ValueError as e:
             raise ValueError(f"elb.applies_to contains unknown variable: {name}") from e
 
-    # Initialize latent series: start at observed, but nudge ELB-bound observations slightly below bound
     y_lat = dataset.values.copy()
 
     elb_t_idx: dict[int, np.ndarray] = {}
@@ -248,6 +272,8 @@ def fit(
 
     beta_keep: list[np.ndarray] = []
     sigma_keep: list[np.ndarray] = []
+    y_lat_keep: list[np.ndarray] = []
+    gamma_keep: list[np.ndarray] = []
 
     niw = prior.niw
 
@@ -311,7 +337,6 @@ def fit(
                 rng=rng,
             )
 
-        # Update latent shadow rates at ELB observations
         for j in applies_to_idx:
             for t in elb_t_idx[j]:
                 y_lat[t, j] = sample_shadow_value(
@@ -329,6 +354,9 @@ def fit(
         if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
             beta_keep.append(beta.copy())
             sigma_keep.append(sigma.copy())
+            y_lat_keep.append(y_lat.copy())
+            if gamma is not None:
+                gamma_keep.append(gamma.copy())
 
     if last_posterior is None:
         raise RuntimeError("sampler.draws produced no posterior")
@@ -346,8 +374,79 @@ def fit(
         sampler=sampler,
         posterior=last_posterior,
         latent_dataset=latent_dataset,
+        latent_draws=np.stack(y_lat_keep) if y_lat_keep else None,
         beta_draws=np.stack(beta_keep) if beta_keep else None,
         sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+        gamma_draws=np.stack(gamma_keep) if gamma_keep else None,
+    )
+
+
+def fit(
+    dataset: Dataset,
+    model: ModelSpec,
+    prior: PriorSpec,
+    sampler: SamplerConfig,
+    *,
+    rng: np.random.Generator | None = None,
+) -> FitResult:
+    """Fit an SRVAR/BVAR model and return posterior draws.
+
+    This is the primary user-facing entry point for estimating models in this package.
+
+    Supported configurations:
+    - Conjugate BVAR with Normal-Inverse-Wishart prior (``prior.family='niw'``)
+    - Spike-and-slab variable selection (``prior.family='ssvs'``)
+    - Effective lower bound (ELB) data-augmentation Gibbs sampler (``model.elb.enabled``)
+    - Stochastic volatility random-walk (SVRW) (``model.volatility.enabled``; requires NIW)
+
+    Args:
+        dataset: Observed data (T, N). When ELB is enabled, some variables are interpreted as
+            censored at the ELB.
+        model: Model configuration, including lag order ``p`` and optional ELB/SV specs.
+        prior: Prior configuration. The prior family is determined by ``prior.family``.
+        sampler: MCMC configuration (draws, burn-in, thinning).
+        rng: Optional NumPy RNG.
+
+    Returns:
+        FitResult with posterior parameters and/or stored posterior draws depending on the
+        model configuration.
+
+        - For conjugate NIW without ELB/SV, ``FitResult.posterior`` is populated and
+          ``beta_draws``/``sigma_draws`` are produced by direct sampling.
+        - For Gibbs samplers (ELB, SSVS, SV), burn-in and thinning are applied online and
+          the returned ``*_draws`` arrays contain only kept draws.
+
+    Notes:
+        When ELB is enabled, the latent series is initialized by setting observations at or
+        below the bound to a small amount below the bound (currently ``bound - 0.05``). This
+        is a numerical initialization choice intended to avoid starting exactly at the
+        truncation boundary.
+    """
+    prior_family = prior.family.lower()
+    if prior_family not in {"niw", "ssvs"}:
+        raise ValueError("only prior.family in {'niw','ssvs'} is supported")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if model.volatility is not None and model.volatility.enabled:
+        if prior_family != "niw":
+            raise ValueError("stochastic volatility currently requires prior.family='niw'")
+        return _fit_svrw(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
+
+    if model.elb is None or not model.elb.enabled:
+        return _fit_no_elb(dataset=dataset, model=model, prior=prior, sampler=sampler, prior_family=prior_family, rng=rng)
+
+    # Phase 3: ELB data-augmentation Gibbs
+    # Initialize latent series: start at observed, but nudge ELB-bound observations slightly below bound
+    # Update latent shadow rates at ELB observations
+    return _fit_elb_gibbs(
+        dataset=dataset,
+        model=model,
+        prior=prior,
+        sampler=sampler,
+        prior_family=prior_family,
+        rng=rng,
     )
 
 
@@ -359,16 +458,79 @@ def forecast(
     quantile_levels: list[float] | None = None,
     rng: np.random.Generator | None = None,
 ) -> ForecastResult:
+    """Generate predictive simulations from a fitted model.
+
+    Forecasts are produced by Monte Carlo simulation using posterior parameter draws.
+
+    Args:
+        fit: Result from :func:`srvar.api.fit`.
+        horizons: List of forecast horizons (in steps) requested by the caller.
+            Internally, simulations are generated out to ``max(horizons)`` and the returned
+            arrays have length ``H = max(horizons)`` along the horizon dimension.
+        draws: Number of predictive simulation paths.
+        quantile_levels: Quantiles to compute from the simulated draws. Defaults to
+            ``[0.1, 0.5, 0.9]``.
+        rng: Optional NumPy RNG.
+
+    Returns:
+        ForecastResult containing:
+        - ``draws``: simulated observations with shape (D, H, N)
+        - ``mean``: mean across draws with shape (H, N)
+        - ``quantiles``: dict mapping each requested quantile to an array (H, N)
+
+        If ELB is enabled in the fitted model, returned ``draws`` are the observed (floored)
+        draws, and ``latent_draws`` contains the unconstrained latent draws.
+
+    Example:
+        If you call ``forecast(fit, horizons=[1, 3], ...)`` then ``result.mean[0]``
+        corresponds to horizon 1 and ``result.mean[2]`` corresponds to horizon 3.
+    """
     if rng is None:
         rng = np.random.default_rng()
 
     if quantile_levels is None:
         quantile_levels = [0.1, 0.5, 0.9]
 
+    if not isinstance(draws, (int, np.integer)) or isinstance(draws, bool):
+        raise ValueError("draws must be an integer")
+    if int(draws) < 1:
+        raise ValueError("draws must be >= 1")
+    draws = int(draws)
+
+    if not isinstance(horizons, list) or len(horizons) == 0:
+        raise ValueError("horizons must be a non-empty list of positive integers")
+    horizons_int: list[int] = []
+    for h in horizons:
+        if not isinstance(h, (int, np.integer)) or isinstance(h, bool):
+            raise ValueError("horizons must contain only integers")
+        hi = int(h)
+        if hi < 1:
+            raise ValueError("horizons must contain only positive integers")
+        horizons_int.append(hi)
+    horizons = horizons_int
+
+    if not isinstance(quantile_levels, list) or len(quantile_levels) == 0:
+        raise ValueError("quantile_levels must be a non-empty list")
+    quantiles_float: list[float] = []
+    for q in quantile_levels:
+        qf = float(q)
+        if not np.isfinite(qf) or not (0.0 < qf < 1.0):
+            raise ValueError("quantile_levels must be finite and in (0, 1)")
+        quantiles_float.append(qf)
+    quantile_levels = quantiles_float
+
     hmax = int(max(horizons))
     p = fit.model.p
 
+    if fit.posterior is None and fit.beta_draws is None:
+        raise ValueError(
+            "fit does not contain posterior parameters or stored draws; "
+            "this can happen if burn_in/thin leaves zero kept draws"
+        )
+
     base_dataset = fit.latent_dataset if fit.latent_dataset is not None else fit.dataset
+    if base_dataset.T < p:
+        raise ValueError("dataset is too short for requested lag order p")
     y_last = base_dataset.values[-p:, :]
 
     if fit.beta_draws is not None and fit.sigma_draws is not None:
@@ -442,8 +604,11 @@ def forecast(
     mean = sims.mean(axis=0)
     quantiles = {q: np.quantile(sims, q=q, axis=0) for q in quantile_levels}
 
+    latent_sims: np.ndarray | None = None
+
     # If ELB enabled, return observed draws (apply floor) for constrained variables
     if fit.model.elb is not None and fit.model.elb.enabled:
+        latent_sims = sims.copy()
         applies_to_idx = [fit.dataset.variables.index(v) for v in fit.model.elb.applies_to]
         sims = apply_elb_floor(sims, bound=fit.model.elb.bound, indices=applies_to_idx)
         mean = sims.mean(axis=0)
@@ -453,6 +618,7 @@ def forecast(
         variables=list(fit.dataset.variables),
         horizons=list(horizons),
         draws=sims,
+        latent_draws=latent_sims,
         mean=mean,
         quantiles=quantiles,
     )

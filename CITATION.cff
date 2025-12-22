@@ -1,0 +1,58 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: srvar-toolkit
+message: >-
+  If you use this software in your research, please cite
+  both the software implementation and the original
+  methodology paper.
+type: software
+authors:
+  - family-names: Shaw
+    given-names: Charles
+    email: charles@charlesshaw.net
+    orcid: "https://orcid.org/0000-0002-3287-8251"
+repository-code: "https://github.com/shawcharles/srvar-toolkit"
+url: "https://srvar-toolkit.charlesshaw.net/"
+license: MIT
+version: 0.1.0
+date-released: "2025-12-22"
+keywords:
+  - bayesian
+  - var
+  - vector-autoregression
+  - shadow-rate
+  - macroeconomics
+  - forecasting
+  - time-series
+  - stochastic-volatility
+  - effective-lower-bound
+abstract: >-
+  A Python toolkit for Shadow-Rate Vector Autoregression
+  (SRVAR) models, implementing Bayesian estimation with
+  effective lower bound constraints, stochastic volatility,
+  Minnesota-style shrinkage priors, and variable selection.
+  Designed for macroeconomic forecasting applications.
+preferred-citation:
+  type: software
+  authors:
+    - family-names: Shaw
+      given-names: Charles
+  title: "srvar-toolkit: Shadow-Rate VAR Toolkit for Python"
+  year: 2025
+  url: "https://github.com/shawcharles/srvar-toolkit"
+references:
+  - type: article
+    authors:
+      - family-names: Grammatikopoulos
+        given-names: Michael
+    title: "Forecasting With Machine Learning Shadow-Rate VARs"
+    journal: "Journal of Forecasting"
+    year: 2025
+    pages: "1-17"
+    doi: "10.1002/for.70041"
+    scope: >-
+      This paper introduces the methodology implemented in
+      srvar-toolkit. Please cite this paper for the
+      theoretical foundations.

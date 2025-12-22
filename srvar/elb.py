@@ -11,6 +11,25 @@ from .linalg import solve_psd
 
 @dataclass(frozen=True, slots=True)
 class ElbSpec:
+    """Effective lower bound (ELB) configuration.
+
+    When ELB is enabled, selected observed series are treated as censored at an
+    upper bound (the effective lower bound). During estimation, latent shadow
+    values are sampled for observations at/below the bound.
+
+    Parameters
+    ----------
+    bound:
+        The ELB level. Observations at or below ``bound + tol`` are treated as
+        constrained.
+    applies_to:
+        Names of variables (as they appear in :class:`srvar.data.dataset.Dataset`)
+        to which the ELB constraint applies.
+    tol:
+        Numerical tolerance when identifying bound observations.
+    enabled:
+        Whether to enable ELB handling.
+    """
     bound: float
     applies_to: list[str] = field(default_factory=list)
     tol: float = 1e-8
@@ -26,6 +45,7 @@ class ElbSpec:
 
 
 def truncnorm_rvs_upper(*, mean: float, sd: float, upper: float, rng: np.random.Generator) -> float:
+    """Draw from a univariate normal distribution truncated above at ``upper``."""
     if sd <= 0 or not np.isfinite(sd):
         raise ValueError("sd must be positive")
 
@@ -35,6 +55,11 @@ def truncnorm_rvs_upper(*, mean: float, sd: float, upper: float, rng: np.random.
 
 
 def apply_elb_floor(values: np.ndarray, *, bound: float, indices: list[int]) -> np.ndarray:
+    """Apply an ELB floor to simulation draws.
+
+    This is used during forecasting to map latent shadow-rate draws back into
+    observed rate draws by enforcing ``y >= bound`` on the constrained variables.
+    """
     y = np.asarray(values, dtype=float).copy()
     if y.ndim < 2:
         raise ValueError("values must have ndim >= 2")
