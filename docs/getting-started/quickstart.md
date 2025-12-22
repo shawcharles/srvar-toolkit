@@ -24,4 +24,36 @@ fc = forecast(fit_res, horizons=[1, 4], draws=200, rng=rng)
 print(fc.mean)
 ```
 
-For more runnable scripts, see `examples/`.
+## CLI + YAML (config-driven run)
+
+The toolkit also supports config-driven runs via the `srvar` CLI.
+
+From the repository root:
+
+```bash
+# Validate a config (checks schema, variable names, and basic compatibility)
+srvar validate config/demo_config.yaml
+
+# Run fit (+ optional forecast/plots depending on the config)
+srvar run config/demo_config.yaml
+
+# Override output directory
+srvar run config/demo_config.yaml --out outputs/my_run
+```
+
+### What gets written
+
+The run writes outputs to `output.out_dir` (or the `--out` override), for example:
+
+- `config.yml`
+- `fit_result.npz`
+- `forecast_result.npz` (if forecasting enabled)
+- `shadow_rate_*.png`, `volatility_*.png`, `forecast_fan_*.png` (if plot saving enabled)
+
+### Useful flags
+
+- `--quiet`: suppress console output
+- `--no-color`: disable ANSI colors in console output
+- `--verbose`: show more detailed progress output
+
+For more runnable scripts, see [`examples/README.md`](../../examples/README.md).

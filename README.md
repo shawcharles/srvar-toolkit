@@ -93,6 +93,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Conjugate BVAR (NIW)** | Closed-form posterior updates and fast sampling for VAR coefficients/covariance | `PriorSpec.niw_default(...)` | ✅ Supported |
 | **Minnesota Shrinkage** | Minnesota-style shrinkage via NIW prior construction | `PriorSpec.niw_minnesota(...)` | ✅ Supported |
 | **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | ✅ Supported |
+| **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | ✅ Supported |
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | ✅ Supported |
 | **Stochastic Volatility** | Diagonal log-volatility random-walk (KSC mixture sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | ✅ Supported |
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | ✅ Supported |
@@ -260,7 +261,7 @@ See:
 - [x] Plotting utilities
 - [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
 - [ ] Steady-state VAR parameterisation
-- [ ] Bayesian LASSO prior
+- [x] Bayesian LASSO prior
 - [ ] Dirichlet-Laplace prior
 - [ ] Full-covariance stochastic volatility
 

@@ -11,6 +11,41 @@ Most workflows use four objects:
 - `PriorSpec`: prior family and hyperparameters (NIW or SSVS)
 - `SamplerConfig`: MCMC controls (draws, burn-in, thinning)
 
+## YAML configuration (CLI)
+
+In addition to the Python API, the CLI supports running a full fit/forecast/plot pipeline from a YAML config:
+
+```bash
+srvar validate config/demo_config.yaml
+srvar run config/demo_config.yaml
+```
+
+### Where to start
+
+- `config/demo_config.yaml`: comment-rich template
+- `config/minimal_config.yaml`: minimal runnable config
+
+### Schema overview
+
+The top-level keys map directly to the core Python objects:
+
+- `data`: input CSV and variable selection
+- `model`: `ModelSpec` (lag order, intercept, optional `elb`, optional `volatility`)
+- `prior`: `PriorSpec` (e.g. NIW defaults or Minnesota-style)
+- `sampler`: `SamplerConfig` (draws/burn-in/thin/seed)
+- `forecast` (optional): forecast horizons/draws/quantiles
+- `output`: output directory and which artifacts to save
+- `plots` (optional): which variables to plot and quantile bands
+
+### Output artifacts
+
+When you run `srvar run`, the toolkit writes outputs into `output.out_dir` (or `--out`):
+
+- `config.yml` (exact config used)
+- `fit_result.npz` (posterior draws)
+- `forecast_result.npz` (if forecasting enabled)
+- `shadow_rate_*.png`, `volatility_*.png`, `forecast_fan_*.png` (if plot saving enabled)
+
 ## Choosing the lag order `p`
 
 - Larger `p` increases the number of regressors `K` and typically increases runtime.

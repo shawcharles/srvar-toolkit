@@ -12,6 +12,14 @@ pip install -e .
 pip install -e ".[plot]"
 ```
 
+## Optional: CLI + YAML config support
+
+The config-driven CLI (`srvar validate`, `srvar run`) requires PyYAML.
+
+```bash
+pip install -e ".[cli]"
+```
+
 ## Optional: FRED/ALFRED data access
 
 ```bash

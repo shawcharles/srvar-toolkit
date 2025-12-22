@@ -13,6 +13,7 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 5. `sv_fit_forecast.py`
 6. `elb_sv_fit_forecast.py`
 7. `elb_sv_fit_forecast_plots.py`
+8. `blasso.py`
 
 ## Scripts
 
@@ -39,3 +40,6 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 
 - `elb_sv_fit_forecast_plots.py`
   Fits an ELB + SV model on a synthetic, time-indexed dataset and writes plots into `outputs/example_plots/`.
+
+- `blasso.py`
+  Fits a Bayesian LASSO (BLASSO) VAR with both global and adaptive shrinkage, and prints basic coefficient summaries.

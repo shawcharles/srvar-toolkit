@@ -225,7 +225,30 @@ def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> P
                 kwargs2[name] = hyp[name]
         return PriorSpec.from_ssvs(k=k, n=dataset.N, include_intercept=model.include_intercept, **kwargs2)
 
-    raise ConfigError("prior.family must be one of: niw, ssvs")
+    if family_l == "blasso":
+        hyp = _get(prior_cfg, "blasso", default={})
+        if not isinstance(hyp, dict):
+            raise ConfigError("prior.blasso must be a mapping")
+
+        kwargs3: dict[str, Any] = {}
+        if "mode" in hyp:
+            kwargs3["mode"] = hyp["mode"]
+        for name in [
+            "a0_global",
+            "b0_global",
+            "a0_c",
+            "b0_c",
+            "a0_L",
+            "b0_L",
+            "tau_init",
+            "lambda_init",
+        ]:
+            if name in hyp:
+                kwargs3[name] = hyp[name]
+
+        return PriorSpec.from_blasso(k=k, n=dataset.N, include_intercept=model.include_intercept, **kwargs3)
+
+    raise ConfigError("prior.family must be one of: niw, ssvs, blasso")
 
 
 def build_sampler(cfg: dict[str, Any]) -> tuple[SamplerConfig, np.random.Generator]:

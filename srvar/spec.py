@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from .elb import ElbSpec
 from .sv import VolatilitySpec
@@ -101,6 +102,36 @@ class SSVSSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class BLassoSpec:
+    mode: Literal["global", "adaptive"] = "global"
+    a0_global: float = 1.0
+    b0_global: float = 1.0
+    a0_c: float = 1.0
+    b0_c: float = 1.0
+    a0_L: float = 1.0
+    b0_L: float = 1.0
+    tau_init: float = 1e4
+    lambda_init: float = 2.0
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"global", "adaptive"}:
+            raise ValueError("mode must be one of: global, adaptive")
+        for name in [
+            "a0_global",
+            "b0_global",
+            "a0_c",
+            "b0_c",
+            "a0_L",
+            "b0_L",
+            "tau_init",
+            "lambda_init",
+        ]:
+            v = float(getattr(self, name))
+            if not np.isfinite(v) or v <= 0:
+                raise ValueError(f"{name} must be finite and > 0")
+
+
+@dataclass(frozen=True, slots=True)
 class PriorSpec:
     """Prior specification wrapper.
 
@@ -121,6 +152,7 @@ class PriorSpec:
     family: str
     niw: NIWPrior
     ssvs: SSVSSpec | None = None
+    blasso: BLassoSpec | None = None
 
     @staticmethod
     def niw_default(*, k: int, n: int) -> "PriorSpec":
@@ -322,6 +354,66 @@ class PriorSpec:
             fix_intercept=bool(fix_intercept and include_intercept),
         )
         return PriorSpec(family="ssvs", niw=niw, ssvs=spec)
+
+    @staticmethod
+    def from_blasso(
+        *,
+        k: int,
+        n: int,
+        mode: Literal["global", "adaptive"] = "global",
+        include_intercept: bool = True,
+        m0: np.ndarray | None = None,
+        s0: np.ndarray | None = None,
+        nu0: float | None = None,
+        a0_global: float = 1.0,
+        b0_global: float = 1.0,
+        a0_c: float = 1.0,
+        b0_c: float = 1.0,
+        a0_L: float = 1.0,
+        b0_L: float = 1.0,
+        tau_init: float = 1e4,
+        lambda_init: float = 2.0,
+    ) -> "PriorSpec":
+        if k < 1:
+            raise ValueError("k must be >= 1")
+        if n < 1:
+            raise ValueError("n must be >= 1")
+
+        if m0 is None:
+            m0a = np.zeros((k, n), dtype=float)
+        else:
+            m0a = np.asarray(m0, dtype=float)
+            if m0a.shape != (k, n):
+                raise ValueError("m0 must have shape (K, N)")
+
+        if s0 is None:
+            s0a = np.eye(n, dtype=float)
+        else:
+            s0a = np.asarray(s0, dtype=float)
+            if s0a.shape != (n, n):
+                raise ValueError("s0 must have shape (N, N)")
+
+        nu0a = float(n + 2) if nu0 is None else float(nu0)
+
+        niw = NIWPrior(
+            m0=m0a,
+            v0=np.eye(k, dtype=float),
+            s0=s0a,
+            nu0=nu0a,
+        )
+        spec = BLassoSpec(
+            mode=mode,
+            a0_global=float(a0_global),
+            b0_global=float(b0_global),
+            a0_c=float(a0_c),
+            b0_c=float(b0_c),
+            a0_L=float(a0_L),
+            b0_L=float(b0_L),
+            tau_init=float(tau_init),
+            lambda_init=float(lambda_init),
+        )
+        _ = bool(include_intercept)
+        return PriorSpec(family="blasso", niw=niw, blasso=spec)
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,9 +7,100 @@ from .data.dataset import Dataset
 from .results import FitResult, ForecastResult, PosteriorNIW
 from .elb import apply_elb_floor, sample_shadow_value, sample_shadow_value_svrw
 from .spec import ModelSpec, PriorSpec, SamplerConfig
+from .rng import gamma_rate, inverse_gaussian
 from .ssvs import sample_gamma_rows, v0_diag_from_gamma
 from .sv import log_e2_star, sample_beta_svrw, sample_h0, sample_h_svrw, sample_sigma_eta2
 from .var import design_matrix
+
+
+def _blasso_v0_from_state(*, tau: np.ndarray) -> np.ndarray:
+    t = np.asarray(tau, dtype=float).reshape(-1)
+    if t.ndim != 1:
+        raise ValueError("tau must be 1D")
+    if np.any(~np.isfinite(t)) or np.any(t <= 0):
+        raise ValueError("tau must be finite and > 0")
+    return np.diag(t)
+
+
+def _blasso_update_global(
+    *,
+    beta: np.ndarray,
+    tau: np.ndarray,
+    lambda_: float,
+    a0: float,
+    b0: float,
+    rng: np.random.Generator,
+    eps: float = 1e-12,
+) -> tuple[np.ndarray, float]:
+    b = np.asarray(beta, dtype=float)
+    t = np.asarray(tau, dtype=float).reshape(-1)
+    if b.ndim != 2:
+        raise ValueError("beta must be 2D (K, N)")
+    if b.shape[0] != t.shape[0]:
+        raise ValueError("beta.shape[0] must match tau.shape[0]")
+
+    rate = float(b0 + 0.5 * float(np.sum(t)))
+    shape = float(a0 + t.shape[0])
+    lam_new = float(gamma_rate(shape=shape, rate=rate, rng=rng))
+
+    # Row-wise shrinkage compatible with a matrix-normal prior.
+    row_energy = np.sum(b * b, axis=1)
+    stau = np.sqrt(lam_new / (row_energy + eps))
+    invtau = np.asarray(inverse_gaussian(mu=stau, lam=lam_new, rng=rng), dtype=float)
+    invtau = np.clip(invtau, 1e-6, 1e6)
+    tau_new = 1.0 / invtau
+    tau_new = np.clip(tau_new, 1e-12, 1e12)
+    return tau_new, lam_new
+
+
+def _blasso_update_adaptive(
+    *,
+    beta: np.ndarray,
+    tau: np.ndarray,
+    lambda_c: float,
+    lambda_L: float,
+    a0_c: float,
+    b0_c: float,
+    a0_L: float,
+    b0_L: float,
+    c_mask: np.ndarray,
+    rng: np.random.Generator,
+    eps: float = 1e-12,
+) -> tuple[np.ndarray, float, float]:
+    b = np.asarray(beta, dtype=float)
+    t = np.asarray(tau, dtype=float).reshape(-1)
+    cm = np.asarray(c_mask, dtype=bool).reshape(-1)
+    if b.ndim != 2:
+        raise ValueError("beta must be 2D (K, N)")
+    if b.shape[0] != t.shape[0] or b.shape[0] != cm.shape[0]:
+        raise ValueError("beta.shape[0] must match tau/c_mask shape")
+
+    # group masks
+    l_mask = ~cm
+
+    lam_c_new = float(lambda_c)
+    lam_L_new = float(lambda_L)
+
+    if int(np.sum(cm)) > 0:
+        rate_c = float(b0_c + 0.5 * float(np.sum(t[cm])))
+        shape_c = float(a0_c + int(np.sum(cm)))
+        lam_c_new = float(gamma_rate(shape=shape_c, rate=rate_c, rng=rng))
+
+    if int(np.sum(l_mask)) > 0:
+        rate_L = float(b0_L + 0.5 * float(np.sum(t[l_mask])))
+        shape_L = float(a0_L + int(np.sum(l_mask)))
+        lam_L_new = float(gamma_rate(shape=shape_L, rate=rate_L, rng=rng))
+
+    lam_vec = np.where(cm, lam_c_new, lam_L_new)
+
+    row_energy = np.sum(b * b, axis=1)
+    stau = np.sqrt(lam_vec / (row_energy + eps))
+    invtau = np.asarray(inverse_gaussian(mu=stau, lam=lam_vec, rng=rng), dtype=float)
+    invtau = np.clip(invtau, 1e-6, 1e6)
+    tau_new = 1.0 / invtau
+    tau_new = np.clip(tau_new, 1e-12, 1e12)
+
+    return tau_new, lam_c_new, lam_L_new
 
 
 def _fit_svrw(
@@ -44,8 +135,31 @@ def _fit_svrw(
     t_eff, n = y.shape
 
     niw = prior.niw
+    prior_family = prior.family.lower()
+    blasso = prior.blasso if prior_family == "blasso" else None
+    if prior_family == "blasso" and blasso is None:
+        raise ValueError("prior.family='blasso' requires prior.blasso")
+
+    tau: np.ndarray | None = None
+    lambda_: float | None = None
+    lambda_c: float | None = None
+    lambda_L: float | None = None
+    c_mask: np.ndarray | None = None
     mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
     beta = mn.copy()
+
+    if prior_family == "blasso":
+        if blasso is None:
+            raise RuntimeError("blasso spec missing")
+        tau = np.full(x.shape[1], float(blasso.tau_init), dtype=float)
+        if blasso.mode == "global":
+            lambda_ = float(blasso.lambda_init)
+        else:
+            lambda_c = float(blasso.lambda_init)
+            lambda_L = float(blasso.lambda_init)
+            c_mask = np.zeros(x.shape[1], dtype=bool)
+            if model.include_intercept:
+                c_mask[0] = True
 
     h0 = np.log(np.var(y, axis=0) + 1e-12)
     h = np.tile(h0.reshape(1, -1), (t_eff, 1))
@@ -60,7 +174,14 @@ def _fit_svrw(
     for it in range(sampler.draws):
         x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
 
-        beta = sample_beta_svrw(x=x, y=y, m0=niw.m0, v0=niw.v0, h=h, rng=rng)
+        if prior_family == "blasso":
+            if tau is None or blasso is None:
+                raise RuntimeError("blasso state missing")
+            v0 = _blasso_v0_from_state(tau=tau)
+        else:
+            v0 = niw.v0
+
+        beta = sample_beta_svrw(x=x, y=y, m0=niw.m0, v0=v0, h=h, rng=rng)
 
         if model.elb is not None and model.elb.enabled:
             h_full = np.vstack([np.tile(h0.reshape(1, -1), (model.p, 1)), h])
@@ -105,6 +226,36 @@ def _fit_svrw(
                 s0=vol.sigma_eta_prior_s0,
                 rng=rng,
             )
+
+        if prior_family == "blasso":
+            if blasso is None or tau is None:
+                raise RuntimeError("blasso state missing")
+            if blasso.mode == "global":
+                if lambda_ is None:
+                    raise RuntimeError("lambda missing")
+                tau, lambda_ = _blasso_update_global(
+                    beta=beta,
+                    tau=tau,
+                    lambda_=lambda_,
+                    a0=float(blasso.a0_global),
+                    b0=float(blasso.b0_global),
+                    rng=rng,
+                )
+            else:
+                if lambda_c is None or lambda_L is None or c_mask is None:
+                    raise RuntimeError("adaptive lambda state missing")
+                tau, lambda_c, lambda_L = _blasso_update_adaptive(
+                    beta=beta,
+                    tau=tau,
+                    lambda_c=lambda_c,
+                    lambda_L=lambda_L,
+                    a0_c=float(blasso.a0_c),
+                    b0_c=float(blasso.b0_c),
+                    a0_L=float(blasso.a0_L),
+                    b0_L=float(blasso.b0_L),
+                    c_mask=c_mask,
+                    rng=rng,
+                )
 
         if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
             beta_keep.append(beta.copy())
@@ -171,6 +322,80 @@ def _fit_no_elb(
             posterior=posterior,
             beta_draws=beta_keep,
             sigma_draws=sigma_keep,
+        )
+
+    if prior_family == "blasso":
+        if prior.blasso is None:
+            raise ValueError("prior.family='blasso' requires prior.blasso")
+
+        spec_b = prior.blasso
+        _t_eff, k = x.shape
+        _n = y.shape[1]
+        if niw.m0.shape != (k, _n):
+            raise ValueError("blasso requires prior.niw.m0 with shape (K, N)")
+        if niw.s0.shape != (_n, _n):
+            raise ValueError("blasso requires prior.niw.s0 with shape (N, N)")
+
+        tau = np.full(k, float(spec_b.tau_init), dtype=float)
+        lambda_ = float(spec_b.lambda_init)
+        lambda_c = float(spec_b.lambda_init)
+        lambda_L = float(spec_b.lambda_init)
+
+        c_mask = np.zeros(k, dtype=bool)
+        if model.include_intercept:
+            c_mask[0] = True
+
+        beta_keep: list[np.ndarray] = []
+        sigma_keep: list[np.ndarray] = []
+        last_posterior: PosteriorNIW | None = None
+
+        for it in range(sampler.draws):
+            v0 = _blasso_v0_from_state(tau=tau)
+            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
+            last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+
+            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta = beta_draws[0]
+            sigma = sigma_draws[0]
+
+            if spec_b.mode == "global":
+                tau, lambda_ = _blasso_update_global(
+                    beta=beta,
+                    tau=tau,
+                    lambda_=lambda_,
+                    a0=float(spec_b.a0_global),
+                    b0=float(spec_b.b0_global),
+                    rng=rng,
+                )
+            else:
+                tau, lambda_c, lambda_L = _blasso_update_adaptive(
+                    beta=beta,
+                    tau=tau,
+                    lambda_c=lambda_c,
+                    lambda_L=lambda_L,
+                    a0_c=float(spec_b.a0_c),
+                    b0_c=float(spec_b.b0_c),
+                    a0_L=float(spec_b.a0_L),
+                    b0_L=float(spec_b.b0_L),
+                    c_mask=c_mask,
+                    rng=rng,
+                )
+
+            if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
+                beta_keep.append(beta.copy())
+                sigma_keep.append(sigma.copy())
+
+        if last_posterior is None:
+            raise RuntimeError("sampler.draws produced no posterior")
+
+        return FitResult(
+            dataset=dataset,
+            model=model,
+            prior=prior,
+            sampler=sampler,
+            posterior=last_posterior,
+            beta_draws=np.stack(beta_keep) if beta_keep else None,
+            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
         )
 
     if prior.ssvs is None:
@@ -280,6 +505,13 @@ def _fit_elb_gibbs(
     gamma: np.ndarray | None = None
     fixed_mask: np.ndarray | None = None
     spec = prior.ssvs if prior_family == "ssvs" else None
+    blasso = prior.blasso if prior_family == "blasso" else None
+
+    tau: np.ndarray | None = None
+    lambda_: float | None = None
+    lambda_c: float | None = None
+    lambda_L: float | None = None
+    c_mask: np.ndarray | None = None
 
     last_posterior: PosteriorNIW | None = None
 
@@ -293,7 +525,7 @@ def _fit_elb_gibbs(
             beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
             beta = beta_draws[0]
             sigma = sigma_draws[0]
-        else:
+        elif prior_family == "ssvs":
             if spec is None:
                 raise ValueError("prior.family='ssvs' requires prior.ssvs")
 
@@ -336,6 +568,61 @@ def _fit_elb_gibbs(
                 fixed_mask=fixed_mask,
                 rng=rng,
             )
+
+        else:
+            if blasso is None:
+                raise ValueError("prior.family='blasso' requires prior.blasso")
+
+            t_eff, k = x.shape
+            _n = y.shape[1]
+            if niw.m0.shape != (k, _n):
+                raise ValueError("blasso requires prior.niw.m0 with shape (K, N)")
+            if niw.s0.shape != (_n, _n):
+                raise ValueError("blasso requires prior.niw.s0 with shape (N, N)")
+
+            if tau is None:
+                tau = np.full(k, float(blasso.tau_init), dtype=float)
+                lambda_ = float(blasso.lambda_init)
+                lambda_c = float(blasso.lambda_init)
+                lambda_L = float(blasso.lambda_init)
+                c_mask = np.zeros(k, dtype=bool)
+                if model.include_intercept:
+                    c_mask[0] = True
+
+            v0 = _blasso_v0_from_state(tau=tau)
+            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
+            last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+
+            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta = beta_draws[0]
+            sigma = sigma_draws[0]
+
+            if blasso.mode == "global":
+                if lambda_ is None or tau is None:
+                    raise RuntimeError("blasso global state missing")
+                tau, lambda_ = _blasso_update_global(
+                    beta=beta,
+                    tau=tau,
+                    lambda_=lambda_,
+                    a0=float(blasso.a0_global),
+                    b0=float(blasso.b0_global),
+                    rng=rng,
+                )
+            else:
+                if lambda_c is None or lambda_L is None or tau is None or c_mask is None:
+                    raise RuntimeError("blasso adaptive state missing")
+                tau, lambda_c, lambda_L = _blasso_update_adaptive(
+                    beta=beta,
+                    tau=tau,
+                    lambda_c=lambda_c,
+                    lambda_L=lambda_L,
+                    a0_c=float(blasso.a0_c),
+                    b0_c=float(blasso.b0_c),
+                    a0_L=float(blasso.a0_L),
+                    b0_L=float(blasso.b0_L),
+                    c_mask=c_mask,
+                    rng=rng,
+                )
 
         for j in applies_to_idx:
             for t in elb_t_idx[j]:
@@ -434,15 +721,15 @@ def fit(
     boundary.
     """
     prior_family = prior.family.lower()
-    if prior_family not in {"niw", "ssvs"}:
-        raise ValueError("only prior.family in {'niw','ssvs'} is supported")
+    if prior_family not in {"niw", "ssvs", "blasso"}:
+        raise ValueError("only prior.family in {'niw','ssvs','blasso'} is supported")
 
     if rng is None:
         rng = np.random.default_rng()
 
     if model.volatility is not None and model.volatility.enabled:
-        if prior_family != "niw":
-            raise ValueError("stochastic volatility currently requires prior.family='niw'")
+        if prior_family not in {"niw", "blasso"}:
+            raise ValueError("stochastic volatility currently requires prior.family in {'niw','blasso'}")
         return _fit_svrw(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
 
     if model.elb is None or not model.elb.enabled:
