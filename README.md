@@ -221,7 +221,7 @@ fig, _ax = plot_volatility(fit_res, var="gdp_growth")
 fig.savefig("volatility.png", dpi=150, bbox_inches="tight")
 ```
 
-_For more examples, see the [`examples/`](examples/) directory._
+_For more examples, see the [`examples/README.md`](examples/README.md)._
 
 ### CLI + YAML (config-driven runs)
 

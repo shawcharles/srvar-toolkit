@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+import time
 
 import numpy as np
 import pandas as pd
@@ -325,22 +327,106 @@ def run_from_config(
     *,
     out_dir: str | Path | None = None,
     validate_only: bool = False,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> RunArtifacts | None:
+    t0_total = time.perf_counter()
+
+    def emit(event: str, payload: dict[str, Any]) -> None:
+        if progress is not None:
+            progress(event, payload)
+
+    emit("stage_start", {"name": "load_config"})
+    t0 = time.perf_counter()
     cfg = load_config(config_path)
+    emit("stage_end", {"name": "load_config", "elapsed_s": time.perf_counter() - t0})
+
+    emit("stage_start", {"name": "validate_config"})
+    t0 = time.perf_counter()
     validate_config(cfg)
+    emit("stage_end", {"name": "validate_config", "elapsed_s": time.perf_counter() - t0})
     if validate_only:
+        emit("run_end", {"elapsed_s": time.perf_counter() - t0_total})
         return None
 
+    emit("stage_start", {"name": "load_dataset"})
+    t0 = time.perf_counter()
     ds = load_dataset_from_csv(cfg)
-    model = build_model(cfg)
-    prior = build_prior(cfg, dataset=ds, model=model)
-    sampler, rng = build_sampler(cfg)
+    emit("stage_end", {"name": "load_dataset", "elapsed_s": time.perf_counter() - t0})
+    emit(
+        "summary",
+        {
+            "kind": "dataset",
+            "T": ds.T,
+            "N": ds.N,
+            "variables": list(ds.variables),
+        },
+    )
 
+    emit("stage_start", {"name": "build_model"})
+    t0 = time.perf_counter()
+    model = build_model(cfg)
+    emit("stage_end", {"name": "build_model", "elapsed_s": time.perf_counter() - t0})
+    emit(
+        "summary",
+        {
+            "kind": "model",
+            "p": model.p,
+            "include_intercept": model.include_intercept,
+            "elb": bool(model.elb is not None and model.elb.enabled),
+            "sv": bool(model.volatility is not None and model.volatility.enabled),
+        },
+    )
+
+    emit("stage_start", {"name": "build_prior"})
+    t0 = time.perf_counter()
+    prior = build_prior(cfg, dataset=ds, model=model)
+    emit("stage_end", {"name": "build_prior", "elapsed_s": time.perf_counter() - t0})
+    prior_cfg = cfg.get("prior", {})
+    if isinstance(prior_cfg, dict):
+        family = prior_cfg.get("family")
+        method = prior_cfg.get("method")
+        emit(
+            "summary",
+            {
+                "kind": "prior",
+                "family": str(family) if family is not None else None,
+                "method": str(method) if method is not None else None,
+            },
+        )
+
+    emit("stage_start", {"name": "build_sampler"})
+    t0 = time.perf_counter()
+    sampler, rng = build_sampler(cfg)
+    emit("stage_end", {"name": "build_sampler", "elapsed_s": time.perf_counter() - t0})
+    emit(
+        "summary",
+        {
+            "kind": "sampler",
+            "draws": sampler.draws,
+            "burn_in": sampler.burn_in,
+            "thin": sampler.thin,
+        },
+    )
+
+    emit("stage_start", {"name": "fit"})
+    t0 = time.perf_counter()
     fit_res = fit(ds, model, prior, sampler, rng=rng)
+    emit("stage_end", {"name": "fit", "elapsed_s": time.perf_counter() - t0})
 
     fc_cfg = build_forecast_config(cfg)
     fc_res: ForecastResult | None = None
     if fc_cfg is not None:
+        emit(
+            "summary",
+            {
+                "kind": "forecast",
+                "horizons": list(fc_cfg["horizons"]),
+                "draws": int(fc_cfg["draws"]),
+                "quantile_levels": list(fc_cfg["quantile_levels"]),
+            },
+        )
+        emit("stage_start", {"name": "forecast"})
+        t0 = time.perf_counter()
         fc_res = forecast(
             fit_res,
             horizons=fc_cfg["horizons"],
@@ -348,21 +434,53 @@ def run_from_config(
             quantile_levels=fc_cfg["quantile_levels"],
             rng=rng,
         )
+        emit("stage_end", {"name": "forecast", "elapsed_s": time.perf_counter() - t0})
 
     output_cfg = _get(cfg, "output", default={})
     if not isinstance(output_cfg, dict):
         raise ConfigError("output must be a mapping")
 
+    emit("stage_start", {"name": "prepare_output"})
+    t0 = time.perf_counter()
     out = Path(out_dir) if out_dir is not None else Path(_get(output_cfg, "out_dir", default="outputs"))
     out.mkdir(parents=True, exist_ok=True)
+    emit(
+        "summary",
+        {
+            "kind": "output",
+            "out_dir": str(out),
+            "save_fit": bool(_get(output_cfg, "save_fit", default=True)),
+            "save_forecast": bool(_get(output_cfg, "save_forecast", default=True)),
+            "save_plots": bool(_get(output_cfg, "save_plots", default=False)),
+        },
+    )
+    emit("stage_end", {"name": "prepare_output", "elapsed_s": time.perf_counter() - t0})
 
-    Path(out / "config.yml").write_text(Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
+    emit("stage_start", {"name": "write_artifacts"})
+    t0_write = time.perf_counter()
+
+    cfg_out = Path(out / "config.yml")
+    cfg_out.write_text(Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
+    emit(
+        "artifact",
+        {"path": str(cfg_out), "bytes": int(cfg_out.stat().st_size), "kind": "config"},
+    )
 
     if _as_bool(_get(output_cfg, "save_fit", default=True), key="output.save_fit"):
-        _save_fit_npz(out / "fit_result.npz", fit_res)
+        fit_path = out / "fit_result.npz"
+        _save_fit_npz(fit_path, fit_res)
+        emit(
+            "artifact",
+            {"path": str(fit_path), "bytes": int(fit_path.stat().st_size), "kind": "fit"},
+        )
 
     if fc_res is not None and _as_bool(_get(output_cfg, "save_forecast", default=True), key="output.save_forecast"):
-        _save_forecast_npz(out / "forecast_result.npz", fc_res)
+        fc_path = out / "forecast_result.npz"
+        _save_forecast_npz(fc_path, fc_res)
+        emit(
+            "artifact",
+            {"path": str(fc_path), "bytes": int(fc_path.stat().st_size), "kind": "forecast"},
+        )
 
     if _as_bool(_get(output_cfg, "save_plots", default=False), key="output.save_plots"):
         plots_cfg = _get(cfg, "plots", default={})
@@ -378,18 +496,40 @@ def run_from_config(
 
         for v in vars_to_plot:
             fig, _ax = plot_shadow_rate(fit_res, var=v, bands=bands_t)
-            fig.savefig(out / f"shadow_rate_{v}.png", dpi=200, bbox_inches="tight")
+            p_shadow = out / f"shadow_rate_{v}.png"
+            fig.savefig(p_shadow, dpi=200, bbox_inches="tight")
+            emit(
+                "artifact",
+                {"path": str(p_shadow), "bytes": int(p_shadow.stat().st_size), "kind": "plot"},
+            )
 
             if fit_res.h_draws is not None:
                 fig, _ax = plot_volatility(fit_res, var=v, bands=bands_t)
-                fig.savefig(out / f"volatility_{v}.png", dpi=200, bbox_inches="tight")
+                p_vol = out / f"volatility_{v}.png"
+                fig.savefig(p_vol, dpi=200, bbox_inches="tight")
+                emit(
+                    "artifact",
+                    {"path": str(p_vol), "bytes": int(p_vol.stat().st_size), "kind": "plot"},
+                )
 
             if fc_res is not None:
                 fig, _ax = plot_forecast_fanchart(fc_res, var=v, bands=bands_t, use_latent=False)
-                fig.savefig(out / f"forecast_fan_{v}_observed.png", dpi=200, bbox_inches="tight")
+                p_fc_obs = out / f"forecast_fan_{v}_observed.png"
+                fig.savefig(p_fc_obs, dpi=200, bbox_inches="tight")
+                emit(
+                    "artifact",
+                    {"path": str(p_fc_obs), "bytes": int(p_fc_obs.stat().st_size), "kind": "plot"},
+                )
 
                 if fc_res.latent_draws is not None:
                     fig, _ax = plot_forecast_fanchart(fc_res, var=v, bands=bands_t, use_latent=True)
-                    fig.savefig(out / f"forecast_fan_{v}_shadow.png", dpi=200, bbox_inches="tight")
+                    p_fc_sh = out / f"forecast_fan_{v}_shadow.png"
+                    fig.savefig(p_fc_sh, dpi=200, bbox_inches="tight")
+                    emit(
+                        "artifact",
+                        {"path": str(p_fc_sh), "bytes": int(p_fc_sh.stat().st_size), "kind": "plot"},
+                    )
 
+    emit("stage_end", {"name": "write_artifacts", "elapsed_s": time.perf_counter() - t0_write})
+    emit("run_end", {"elapsed_s": time.perf_counter() - t0_total})
     return RunArtifacts(fit_result=fit_res, forecast_result=fc_res)
