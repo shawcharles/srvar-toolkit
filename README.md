@@ -258,6 +258,7 @@ See:
 - [x] Combined ELB + SV model
 - [x] Forecasting with fan charts
 - [x] Plotting utilities
+- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
 - [ ] Steady-state VAR parameterisation
 - [ ] Bayesian LASSO prior
 - [ ] Dirichlet-Laplace prior
@@ -363,6 +364,17 @@ If you use **srvar-toolkit** in your research, please cite both the software and
   pages   = {1--17},
   doi     = {10.1002/for.70041}
 }
+
+@article{carriero2025forecasting,
+  title={Forecasting with shadow rate VARs},
+  author={Carriero, Andrea and Clark, Todd E and Marcellino, Massimiliano and Mertens, Elmar},
+  journal={Quantitative Economics},
+  volume={16},
+  number={3},
+  pages={795--822},
+  year={2025},
+  publisher={Wiley Online Library}
+}
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -376,7 +388,11 @@ This toolkit implements methods from:
 
 > Grammatikopoulos, M. 2025. "Forecasting With Machine Learning Shadow-Rate VARs." *Journal of Forecasting* 1–17. [https://doi.org/10.1002/for.70041](https://doi.org/10.1002/for.70041)
 
+> Carriero, A., Clark, T. E., Marcellino, M., & Mertens, E. 2025. "Forecasting with shadow rate VARs." *Quantitative Economics* 16(3), 795–822.
+
 For the original MATLAB replication code, see: [MichaelGrammmatikopoulos/MLSRVARs](https://github.com/MichaelGrammmatikopoulos/MLSRVARs)
+
+For an additional MATLAB replication toolbox with code written by Elmar Mertens, see: [elmarmertens/CCMMshadowrateVAR-code](https://github.com/elmarmertens/CCMMshadowrateVAR-code)
 
 ### Additional References
 
