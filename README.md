@@ -69,16 +69,18 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 [![SciPy][scipy-badge]][scipy-url]
 [![Pandas][pandas-badge]][pandas-url]
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+---
 
-<div align="center" style="display: flex; justify-content: center; gap: 10px;">
-  <div style="height: 40px; width: 45%; display: flex; align-items: center; justify-content: center;">
-    <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" style="max-height: 100%; max-width: 100%;">
-  </div>
-  <div style="height: 40px; width: 45%; display: flex; align-items: center; justify-content: center;">
-    <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" style="max-height: 100%; max-width: 100%;">
-  </div>
-</div>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" height="240" />
+    </td>
+    <td align="center" width="50%">
+      <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" height="240" />
+    </td>
+  </tr>
+</table>
 
 
 ---
