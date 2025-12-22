@@ -72,10 +72,10 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <div align="center" style="display: flex; justify-content: center; gap: 10px;">
-  <div style="height: 300px; display: flex; align-items: center;">
+  <div style="height: 90px; display: flex; align-items: center;">
     <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" style="max-height: 100%; width: auto;">
   </div>
-  <div style="height: 300px; display: flex; align-items: center;">
+  <div style="height: 90px; display: flex; align-items: center;">
     <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" style="max-height: 100%; width: auto;">
   </div>
 </div>
