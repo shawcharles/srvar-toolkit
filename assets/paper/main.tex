@@ -1,0 +1,481 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{lineno}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{threeparttable}
+
+\title{Forecasting With Machine Learning Shadow-Rate VARs}
+\author{Michael Grammatikopoulos}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Interest rates are fundamental in macroeconomic modeling. Recent studies integrate the effective lower bound (ELB) into vector autoregressions (VARs). This paper studies shadow-rate VARs by using interest rates as a latent variable near the ELB to estimate their shadow-rate values. The study explores machine learning models, such as the Bayesian LASSO, and extends the analysis to include homoscedastic and stochastic volatility shadow-rate VARs. It also examines the integration of shadow rate with vintage-specific long-run assumptions derived from the Survey of Professional Forecasters (SPF). The paper analyzes 16 shadow-rate VARs with 20 US variables, using real-time data from 2005 to 2019 and assesses their predictive accuracy for both point and density forecasts. The findings indicate that shadow-rate models can enhance predictive accuracy for both short-term and longer term horizons across macroeconomic and financial variables. These models could be of use for central banks and policymakers.
+\end{abstract}
+
+\keywords{effective lower bound, forecasting, generalized impulse responses, shadow rates, steady states, structural VAR, variable selection}
+
+\section{Introduction}
+Since the 1980s, Bayesian techniques have been used in economic forecasting. For the analysis of economic activity, academics and policymakers frequently employ vector autoregressions (VARs), which were first introduced by Sims in 1980. When data quality is suboptimal, traditional maximum likelihood VARs can produce imprecise results due to the curse of dimensionality. After Doan et al. (1984) and Litterman (1986) showed that Bayesian shrinkage increases forecast accuracy, Bayesian VAR models became popular.
+
+Interest rate modelling is a crucial component of forecasting, especially during recessions when rates may level off at their effective lower bound (ELB).  For example, during the COVID-19 pandemic (2020–2022) and the Great Recession (2009–2015), the Federal Open Market Committee (FOMC) kept the federal funds rate range at 0–25 basis points.  In a similar vein, the European Central Bank set its deposit rate at -50 basis points.  Negative interest rate policies (NIRPs), which maintain policy rates close to zero, have been implemented by a number of central banks. According to Wu and Zhang's (2019) estimates for the euro area, these rates typically stay marginally above zero under NIRP.
+
+This study expands upon recent developments in Bayesian VARs, particularly those that use stochastic volatility (SV).  
+
+According to Carriero et al. (2019), the application of equation-by-equation estimation has resulted in notable improvements in computational efficiency for these models. By applying the equation-by-equation estimation framework to a variety of machine learning priors, such as Bayesian LASSO (BLASSO) and stochastic search variable selection (SSVS), Gefang et al. (2023), henceforth referred to as GKP, developed a computationally effective MCMC algorithm for structural VAR (SVAR) models.
+The computationally effective MCMC algorithm put forth by GKP (2023) is expanded upon in this work due to the fact that its triangular algorithm and equation-by-equation estimation offer a substantial benefit for our present application. By combining shrinkage priorities with the shadow-rate estimation method put forth by Carriero et al. (2025), or CCMM for short, we can effectively manage the high-dimensional parameter space that results. To the best of our knowledge, there has not been much research done on the use of shrinkage priors and long-run assumptions in shadow-rate VAR models.  Consequently, in addition to applying the GKP (2023) algorithm to this new situation, our paper also extends
+the analysis to a real-time dataset, offering insightful information about how monetary policy behaves during times when unconventional measures are being implemented.
+
+Building on the work of Villani (2009), who created the steady-state VAR, the new algorithm enables the inclusion of the vintage-specific long-run (VSLR) assumptions and the shadow-rate VAR model created by CCMM (2025).  
+The VSLR approach uses a mixture of normals (similar to SSVS) for the prior variance of those long-run assumptions and takes data from the Survey of Professional Forecasters (SPF), which provides information for the prior mean. Finally, this exercise runs a complete real-time forecasting simulation using the ALFRED macroeconomic database.
+
+In their work, CCMM (2025) compared different shadow-rate modelling variations, such as the plug-in approach, the simple shadow-rate, the block-hybrid shadow-rate, and the full-hybrid shadow-rate. They also generalised the unobserved components into a VAR setting.One  This study focusses on the block-hybrid shadow-rate VAR model, which makes the assumption that while the financial markets rely on the shadow rates, economic agents are influenced by actual interest rates when making decisions.  This essentially means that we forecast financial variables (the yield curve) and nominal rates (which are bound at the ELB) for the remaining variables (the macroeconomic series) using our estimated shadow rates as dependent variables. According to CCMM (2025), models that include both short- and long-term rates typically do better in forecasting because they can capture various dynamics, like yield curve inversions. The BAA Moody's corporate bond yield and maturities ranging from the three-month Treasury bill to the ten-year bond are included.
+
+The study illustrates the effects of adding shrinkage techniques, SV, and VSLR assumptions to the shadow-rate VAR framework.  The study shows that more complex models improve overall forecast performance, which results in statistically significant gains in forecasting a range of economic indicators.  The predictive distributions throughout the yield curve are greatly influenced by shadow-rate models, which anchor them to the ELB.
+
+The remainder of the paper is organised as follows:  The model framework and all of the priors and their combinations that we use for our analysis are defined first. The data and the larger methodology are then described.  The forecast evaluation methodology, results, summary, and Appendix S1 are presented in the final third of the paper.
+
+
+
+\section{Shadow-Rate VAR With SV, Variable Selection, and VSLR Assumptions}
+
+\subsection{Traditional SVAR}
+
+CCMM (2022, 2019) have shown that applying equation-by-equation estimation can provide gains in computational efficiency with models that include SV. GKP (2023) used a SVAR and extended the equation-by-equation estimation of a BVAR-SV to machine learning methods (like BLASSO and SSVS) and produced MCMC algorithms for those models. This paper extends the algorithms of GKP (2023); thus, for all priors, we start with the SVAR representation:
+\begin{equation}
+A_0 y_t = b_0 + B_1 y_{t-1} + \ldots + B_p y_{t-p} + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, D)
+\end{equation}
+for sample $t = 1, \ldots, T$, where $y_t$ is the $n \times 1$ vector of endogenous variables, $b_0$ is the $n \times 1$ vector of intercepts, $B_i$ is the $n \times n$ matrix of lag $i$ VAR coefficients, $D = \text{diag}(\sigma_1^2, \ldots, \sigma_n^2)$, and $A_0$ is an $n \times n$ lower triangular matrix with ones on its main diagonal. By expanding $A_0 y_t$ element by element, we can then rearrange the above equation as
+\begin{equation}
+y_t = X_t \boldsymbol{\beta} + W_t \tilde{\boldsymbol{\alpha}} + \varepsilon_t
+\end{equation}
+where $X_t = I_n \otimes [1, y'_{t-1}, \ldots, y'_{t-p}]$ is the $n \times nK$ regressor matrix, $K = np + 1$ ($p$ lags for $n$ variables plus intercept), while $\boldsymbol{\beta} = \text{vec}([b_0, B_1, \ldots, B_p]')$ is the $nK \times 1$ vector of coefficients, $W_t$ is the $n \times m$ matrix containing the appropriate contemporaneous data from the $y_t$ matrix, and the vector $\tilde{\boldsymbol{\alpha}}$ contains the lower diagonal elements of the $A_0$ matrix stacked by rows. Finally, Equation (2) can be rewritten in an equation-by-equation style, where for each variable $i$, we have
+\begin{equation}
+y_{i,t} = z_{i,t} \boldsymbol{\theta}_i + \varepsilon_{i,t}, \quad \varepsilon_{i,t} \sim N(0, \sigma_i^2)
+\end{equation}
+
+GKP (2023) discuss the advantages that stem from utilizing the equation-by-equation estimation of a VAR with machine learning methods that allow for shrinkage of the model parameters. First of all, Carriero et al. (2019) have shown that the computational burden of the joint coefficient estimation requires $O(n^6)$ manipulations, whereas the equation-by-equation requires $O(n^4)$. For VARs with higher dimensionality, the computational gains are substantial. Second, with the machine learning methods that shrink coefficients to zero, it may be desirable to shrink the error covariances (reduced form variance $\Sigma \equiv A_0^{-1} D (A_0^{-1})'$ as well, especially in large models. The specification described in (2) allows for the error covariances to be shrunk with the same prior as the coefficients, given that they are estimated as pseudocoefficients.
+
+By taking Equation (1) and multiplying both sides by $A_0^{-1}$ on the left, we get the reduced form VAR used in the construction of impulse response functions:
+\begin{equation}
+y_t = C + A_1 y_{t-1} + \ldots + A_p y_{t-p} + u_t, \quad u_t \sim \mathcal{N}(0, \Sigma)
+\end{equation}
+where $C = A_0^{-1} b_0$, $A_1 = A_0^{-1} B_1, \ldots, A_p = A_0^{-1} B_p$, $u_t = A_0^{-1} \varepsilon_t$ and it follows that $\Sigma = A_0^{-1} D (A_0^{-1})'$.
+
+\subsection{Shadow-Rate VAR}
+
+Our approach is based on the work of CCMM (2025), which extends the unobserved components model of Johannsen and Mertens (2021) to a general VAR setting. The shadow-rate VAR is designed to consider the ELB, a key aspect that can shape Central Bank policy.
+
+The real and shadow interest rates are connected through a censoring equation, a concept derived from Black (1995):
+\begin{equation}
+y_t = \begin{pmatrix} x_t \\ i_t \end{pmatrix}, \quad \psi_t = \begin{pmatrix} x_t \\ s_t \end{pmatrix}, \quad \text{and} \quad i_t = \max\{ELB, s_t\}
+\end{equation}
+which is the measurement equation, and the state is defined by the VAR process that includes the latent shadow rate $s_t$:
+\begin{equation}
+\psi_t = \sum_{j=1}^{p} A_j \psi_{t-j} + v_t, \quad \text{with} \quad v_t \sim N(0, \Sigma_t)
+\end{equation}
+
+The focus of this paper is on the block-hybrid approach in estimating the shadow rates. In this model, only lagged actual rates appear on the right-hand side of the equations for macroeconomic variables. This is predicated on the idea that spending and investment decisions of economic agents are influenced by actual interest rates. Lagged shadow rates appear (only) on the financial variables. The inclusion of lagged shadow rates in the interest rate block of the VAR helps capture the ``lower-for-longer'' or ``make-up'' strategies in monetary policy when forming expectations about future interest rates.
+
+The block-hybrid model takes the following form:
+\begin{equation}
+x_t = \sum_{j=1}^{p} A_{xx,j} x_{t-j} + \sum_{j=1}^{p} A_{xi,j} i_{t-j} + v_{x,t}
+\end{equation}
+\begin{equation}
+s_t = \sum_{j=1}^{p} A_{sx,j} x_{t-j} + \sum_{j=1}^{p} A_{ss,j} s_{t-j} + v_{s,t}
+\end{equation}
+
+This model captures the dynamics of short-term rates, reflecting the historical trends of monetary policies that would have pushed rates below the ELB. However, it models real economic outcomes based on actual interest rates, not hypothetical shadow rates.
+
+If an interest rate value is above the threshold, the shadow rate is equal to the interest rate. When $i_t = ELB$, that is, the ELB is binding, then we estimate the shadow rate, using the missing value problem approach where the shadow rate $s_t \leq ELB$. Observed rates are modeled as censored observations of the shadow-rate process. The shadow-rate VAR system is a conditionally Gaussian unobserved components model where the algorithm developed by Johannsen and Mertens (2021) is embedded into the MCMC estimation of the coefficients, VSLR assumptions, and stochastic volatilities.
+
+\subsection{VSLR Assumptions}
+
+In Bayesian VAR modeling, analysts typically include prior information on coefficient behavior but usually remain agnostic about constants and exogenous components, assuming large variance for these elements. This data-driven approach may compromise accuracy if prior knowledge is not integrated.
+
+Statisticians often have long-term expectations that can enhance forecasting, reflected in long-run assumptions, such as central banks' inflation targeting. Villani (2009) developed a steady-state VAR model, using long-run assumptions, resulting in improved forecasts. Louzis (2019) further refined this by combining variable selection with a steady-state VAR and using a Kalman filter to estimate the long-run means as a latent variable. This paper aims to innovate by using forecasts from the SPF to inform the prior means for our series. Given the nature of the real-time forecasting exercise, constraining our long-run assumptions to the same value for all vintages would be hard to defend. Thus, the VSLR assumptions are built from long-term forecasts provided by the SPF from the Federal Reserve Bank of Philadelphia. The prior is built with the four-step-ahead SPF forecasts for all variables that were available. We use the same assumptions for the two inflation indicators, that is, we use the consumer price index inflation assumptions for the producer price index inflation as well. For nominal personal income, nominal GDP growths were used.
+
+The choice of using the four-quarter-ahead forecasts from the SPF is twofold. Even though the SPF includes longer term forecasts for selected variables, these are updated once per year and not in the same quarter meaning that there are frequency inconsistencies and data availability gaps on the longer term forecasts in the survey. Using the four-step-ahead forecasts of the SPF allows for uniformity and is in line with the real-time exercise, as these forecasts are updated quarterly.
+
+There might be theoretical concerns regarding the choice of this prior, as we inform our long-run assumptions with a short-horizon, business-cycle-sensitive forecast. This is addressed with the ``SSVS within Steady States'' framework, which allows for the model to automatically choose whether to shrink close to the SPF forecast or not. Furthermore, I provide a robustness check of the results with a classic steady-state prior in Appendix S4. The full set of assumptions and their sources are provided in Table 1.
+
+Starting from the reduced form VAR defined in Equation (4):
+\[
+y_t = \alpha_0 + A_1 y_{t-1} + \ldots + A_p y_{t-p} + u_t, \quad u_t \sim \mathcal{N}(0, \Sigma),
+\]
+then taking expectations on both sides yields: $E(y_t) = E(y_{t-1}) = \ldots = E(y_{t-p}) = \boldsymbol{\mu}$ and by assumptions $E(u_t) = 0$. By substituting to the above equation, we get
+\begin{equation}
+\alpha_0 = (I - A_1 - A_2 - \ldots - A_p) \boldsymbol{\mu}
+\end{equation}
+and by substituting this back to the first equation, with the addition of the lag operator and some reformulation, we finally get
+\begin{equation}
+B(L) Z_t = u_t
+\end{equation}
+where $B(L) = (I - A_1 - A_2 - \ldots - A_p)$ and $Z_t = y_t - \boldsymbol{\mu}$. By modeling the demeaned data $Z_t$, we are back to familiar VAR territory, and the posteriors look nearly identical to those from the Minnesota prior. The difference is that posteriors are being produced for the demeaned data, $X_d, Y_d$. So for each equation $i$ in the model, we get
+\begin{equation}
+K_{\beta_i} = V_{\beta_i}^{-1} + \sigma_{\beta_i}^{-1} Z'_{t,i} Z_{t,i}
+\end{equation}
+where $Z_{t,i}$ is the corresponding (demeaned) regressor matrix for each equation $i$. The long-run assumptions follow a Gaussian normal prior:
+\begin{equation}
+\boldsymbol{\beta}_i = K_{\beta_i}^{-1} \left( V_{\beta_i}^{-1} \boldsymbol{\beta}_0 + \sigma_{\beta_i}^{-1} Z'_{t,i} Y_{0,i} \right)
+\end{equation}
+\begin{equation}
+\boldsymbol{\mu} \sim \mathcal{N}(\bar{\boldsymbol{\mu}}, V_{\mu})
+\end{equation}
+
+Following Clark (2011), when the model includes SV, its posterior distribution is given by
+\begin{equation}
+V_{\mu} = \left( U' \left( \sum_{t=1}^{T} \left( Q'_t Q_t \otimes \Sigma_t^{-1} \right) \right) U + V_{\mu}^{-1} \right)^{-1}
+\end{equation}
+\begin{equation}
+\boldsymbol{\mu} = V_{\mu} \left( U' \text{vec} \left( \sum_{t=1}^{T} \Sigma_t^{-1} \left( B(L) Y_t \right) Q_t \right) + V_{\mu}^{-1} \bar{\boldsymbol{\mu}} \right)
+\end{equation}
+
+Most papers in the steady-state VAR literature put an informative prior variance to the model, as doing so prevents instability and potentially bad forecasts; see Villani (2009) and Clark (2011). Louzis (2019) has used a time-varying steady-state VAR that uses the Carter and Kohn algorithm to estimate the states of the long-run equilibrium through time.
+
+In this paper, we are treating parameter uncertainty with an approach that, to the best of our knowledge, has not been explored yet: setting up the prior variance of the long-run equilibrium $\mu$ with a mixture of normals. This can be done by extending the Villani (2009) steady-state VAR with the shrinkage that SSVS allows after simulating $\mu$. Therefore, instead of using Equation (13), we use a mixture of normal priors on $\mu$, which yields
+\begin{equation}
+\boldsymbol{\mu} | \gamma_{\mu} \sim (1 - \gamma_{\mu}) \mathcal{N}(\boldsymbol{\mu}_0, V_0) + \gamma_{\mu} \mathcal{N}(\boldsymbol{\mu}_0, V_1)
+\end{equation}
+
+This allows the machine learning model to automatically decide when to assign high or low variance to the assumptions that we put on $\mu$, which can theoretically address regime switches, that is, potentially choose small variance with a higher probability when we are at the ELB.
+
+\subsection{Machine Learning Variable Selection}
+
+The SSVS methodology developed by George et al. (2008) is a hierarchical shrinkage prior, expressed as a mixture of normal distributions. Let $\beta_{ij}$ denote the coefficient in the $j$th element of the $i$th equation, then
+\begin{equation}
+\beta_{ij} | \gamma_{ij} \sim (1 - \gamma_{ij}) \mathcal{N}(\bar{\beta}_{ij}, \kappa_{0ij}^2) + \gamma_{ij} \mathcal{N}(\bar{\beta}_{ij}, \kappa_{1ij}^2)
+\end{equation}
+where $\gamma_{ij}$ is a dummy variable that follows the Bernoulli distribution. When $\gamma_{ij}$ equals zero, the coefficient is drawn from the first distribution with small variance; when it equals one, it is drawn from the second distribution with high variance. In this exercise, we set $\bar{\beta}_{ij} = 0, \forall i, j$. Therefore, when $\gamma_{ij} = 0$, the coefficient is drawn from the distribution with small variance, which aggressively shrinks it to zero. Conversely, when we draw $\gamma_{ij} = 1$, we have the distribution with large prior variance, meaning that the coefficient is estimated with a noninformative prior and is thus purely data driven. We can express the above in a matrix form for each equation $i$:
+\begin{equation}
+\boldsymbol{\beta}_i | \boldsymbol{\gamma}_i \sim \mathcal{N}(\bar{\boldsymbol{\beta}}_i, D_i)
+\end{equation}
+where $D_i$ is a diagonal matrix with diagonal elements $d_{ij}$ for $j = 1, \ldots, K$, defined as
+\[
+d_{ij} = \begin{cases}
+\kappa_{0ij}^2, & \text{if } \gamma_{ij} = 0, \\
+\kappa_{1ij}^2, & \text{if } \gamma_{ij} = 1,
+\end{cases}
+\]
+where $\kappa_{0ij}, \kappa_{1ij}$ are chosen subjectively. This paper uses $\kappa_{0ij} = 10^{-6}$ and $\kappa_{1ij} = 1/9$. The choice was made such that both small and large variances regularize the prior coefficients (because we also include the error covariances) below 1, in absolute value. Finally, the conditional posterior for $\gamma$ has $\gamma_j$ being independent (for all $j$) Bernoulli random variables:
+\begin{equation}
+\Pr[\gamma_{ij} = 1 | Y, \neg \gamma_j] = \pi_{ij}, \quad \Pr[\gamma_{ij} = 0 | Y, \neg \gamma_j] = 1 - \pi_{ij},
+\end{equation}
+where
+\begin{equation}
+\pi_{ij} = \frac{\frac{1}{\kappa_{1ij}} \exp\left( -\frac{(\beta_{ij} - \bar{\beta}_{ij})^2}{2\kappa_{1ij}^2} \right) \pi_j}{\frac{1}{\kappa_{1ij}} \exp\left( -\frac{(\beta_{ij} - \bar{\beta}_{ij})^2}{2\kappa_{1ij}^2} \right) \pi_j + \frac{1}{\kappa_{0ij}} \exp\left( -\frac{(\beta_{ij} - \bar{\beta}_{ij})^2}{2\kappa_{0ij}^2} \right) (1 - \pi_j)}.
+\end{equation}
+
+The equation-by-equation specification of the VAR with the SSVS prior has the advantage that it greatly simplifies shrinkage and reduces computational burden compared to the reduced form VAR approach from the original paper of George et al. (2008). Because shrinkage on the error covariances might be desired, the triangular algorithm allows these covariances to be shrunk in the same fashion as the VAR coefficients. The Dirichlet--Laplace, BLASSO, and Minnesota prior definitions are available in Appendix S1.
+
+\subsection{SV}
+
+There is a vast literature that uses SV in BVAR modeling, as it has been shown to improve forecasting performance in VARs. Cogley and Sargent (2002), Primiceri (2005), and D'Agostino et al. (2013) have highlighted the importance of adding time variation to the error covariance matrix of the VAR. This paper follows the methodology of Carriero et al. (2022) with only time-varying variances (not covariances). This is because Primiceri (2005) found that there is little or no variation in these parameters, while their estimation adds a significant computational burden in larger systems. For the estimation of stochastic volatilities, we use the auxiliary mixture sampler from Kim et al. (1998), a standard in SV modeling for many papers; see, for example, GKP (2023) and Carriero et al. (2022).
+
+The BVAR forecasting literature is in consensus regarding the inclusion of SV in the modeling: It increases forecast precision. Here, we extend the initial SVAR we defined above by changing the homoscedastic errors to a model with SV. In this setup, we do not impose any restrictive assumptions and allow the errors to have a time-varying structure. Thus, the SVAR can now be written as
+\begin{equation}
+A_0 y_t = b_0 + B_1 y_{t-1} + \ldots + B_p y_{t-p} + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, D_t)
+\end{equation}
+where $D_t$ is a diagonal matrix of the time-varying volatilities,
+\[
+D_t = \begin{pmatrix}
+e^{h_{1t}} & 0 & \cdots & 0 \\
+0 & e^{h_{2t}} & \cdots & 0 \\
+\vdots & \vdots & \ddots & \vdots \\
+0 & 0 & \cdots & e^{h_{nt}}
+\end{pmatrix}.
+\]
+We can equivalently write
+\begin{equation}
+y_t = X_t \boldsymbol{\beta} + v_t
+\end{equation}
+\begin{equation}
+v_t = A_0^{-1} D_t^{0.5} u_t, \quad u_t \sim \text{iid} \mathcal{N}(0, I_n)
+\end{equation}
+
+With this setup, we can have the reduced form variance $\Sigma_t$ in each period of the sample to evolve according to
+\begin{equation}
+\Sigma_t \equiv \text{Var}(v_t) = A_0^{-1} D_t (A_0^{-1})'
+\end{equation}
+
+From (22), we can infer that the SVAR variance will be given by $\tilde{v}_t \equiv A_0 v_t = D_t^{1/2} u_t$ and each element $j$ that corresponds to an equation gives us $\tilde{v}_{j,t} = d_{j,t}^{1/2} u_{j,t}$. Taking squares and then natural logs of this quantity yields
+\begin{equation}
+\ln \tilde{v}_{j,t}^2 = \ln d_{j,t} + \ln u_{j,t}^2
+\end{equation}
+
+Finally, for the volatility of each equation, we define a univariate law of motion for the quantity $h_{j,t} \equiv \ln d_{j,t}$, which is evolving according to a random walk process:
+\begin{equation}
+h_{j,t} = h_{j,t-1} + \zeta_{j,t}, \quad \zeta_{j,t} \sim \mathcal{N}(0, \sigma_{h_j}^2)
+\end{equation}
+and the initial conditions are treated as unknown parameters that are also simulated.
+
+\subsection{The MCMC Algorithm}
+
+The code is a mixture of the hybrid shadow-rate VAR code of CCMM (2025), the shrinkage algorithms from the GKP (2023) paper, and the steady-state algorithm of Villani (2009) as described in Clark (2011). The algorithm presented incorporates SSVS shrinkage, SV, VSLR assumptions, and shadow rates. For the other models, the steps remain unchanged, with variations occurring only in the calculation of the BLASSO and Dirichlet--Laplace conditionals.
+
+The full MCMC algorithm for all models works as follows:
+
+\begin{itemize}
+\item \textbf{Step 0.} Partition your data matrix to identify any interest rates below the ELB:
+\[
+Y_{t \geq t_q - 1}^{(s)} = Y_{\{i_t \leq ELB, t \geq t_q - 1\}}^{(s)},
+\]
+and keep only the $t_q - 1 : T$ observations for the Kalman filtering step, which will calculate the shadow rates, and $t_q$ is the first observation where interest rates are below the ELB. Initialize the triangular algorithm for each variable $j = 1, 2, \ldots, N$ of the VAR. From $S = 15,000$ total draws (including 5000 burn-in), we use notation for each draw $s = 0, 1, \ldots, S$, where $s = 0$ are the initializations. First, we demean the data $Y_d^{(s)} = Y^{(s)} - \boldsymbol{\mu}^{(s)}$, where $\mu^{(s)}$ is the long-run mean initialization. Furthermore, set up initializations for $h_0, V_{\beta}, \Sigma_0$.
+
+\item \textbf{Step 1.} Sample the structural coefficients $\boldsymbol{\beta}_j$ and the error covariances $\boldsymbol{\alpha}_j$ (which are the elements of the $\tilde{a}$ matrix from Equation (2)). Define it as a set $\boldsymbol{\theta}_j = \{\boldsymbol{\beta}_j, \boldsymbol{\alpha}_j\}$. We draw from the conditional posterior of $\theta_j$ that is normal:
+\[
+\boldsymbol{\theta}_j^{(s+1)} | h_j^{(s)}, \boldsymbol{\gamma}_{\theta_j}^{(s)}, Y_d^{(s)} \sim \mathcal{N}(\bar{\boldsymbol{\theta}}_j, K_{\theta_j}),
+\]
+where
+\[
+K_{\theta_j} = V_{\theta_j}^{-1} + Z'_j e^{-h_j} Z_j, \quad \bar{\boldsymbol{\theta}}_j = K_{\theta_j}^{-1} \left( V_{\theta_j} \bar{\boldsymbol{\theta}}_j + Z'_j e^{-h_j} Y_{d,j} \right).
+\]
+After drawing all $\theta_j$, construct the coefficient matrix and check for VAR stability. If the VAR is unstable, repeat Step 1.
+
+\item \textbf{Step 2.} Draw volatilities, $h_j$, which are drawn with the Kim et al. (1998). This approximates the log-$\chi_1^2$ distribution from a 7-point discrete distribution. Conditional on the mixture component indicator $m_t \in \{1, 2, \ldots, 7\}$, we have a linear state-space model that allows us to draw the log-volatility $h_j$:
+\[
+h_j^{(s+1)} | h_{0j}^{(s)}, \sigma_{h_j}^{2(s)}, m_t, Y_d^{(s)} \sim \mathcal{N}(\bar{h}_j, K_{h_j}).
+\]
+
+\item \textbf{Step 3.} Draw the initial conditions of the volatilities $h_{0j}$, which are following a normal:
+\[
+h_{0j}^{(s+1)} | h_j^{(s+1)}, \sigma_{h_j}^{2(s)} \sim \mathcal{N}(\bar{h}_{0j}, K_{h_{0j}}),
+\]
+where
+\[
+K_{h_{0j}} = \sigma_{h_j}^{-2} + V_h^{-1}, \quad \bar{h}_{0j} = K_{h_{0j}}^{-1} \left( a_h V_h^{-1} + h_{t=1}^j \sigma_{h_j}^{-2} \right).
+\]
+
+\item \textbf{Step 4.} Next, draw the variances of the volatilities, which follow an inverse gamma:
+\[
+\sigma_{h_j}^{2(s+1)} | h_{0j}^{(s+1)}, h_j^{(s+1)} \sim \mathcal{IG}(\bar{\nu}, S_h),
+\]
+where
+\[
+\bar{\nu} = \nu + T/2, \quad S_h = S_h + \frac{1}{2} \sum_{t=1}^{T} \zeta_{h,t}^2, \quad \zeta_{h,t} = h_{j,t} - h_{j,t-1}.
+\]
+
+\item \textbf{Step 5.} Draw the posterior probabilities of inclusion of the SSVS as defined in Equations (19) and (20).
+
+\item \textbf{Step 6.} After calculating the reduced form coefficients, draw the steady states: The conditional posterior of $\mu_j$ is normal:
+\[
+\boldsymbol{\mu}_j^{(s+1)} | Y_t^{(s+1)}, \Sigma_t^{(s+1)}, D_t^{(s+1)}, \gamma_{\mu,j}^{(s+1)} \sim \mathcal{N}(\bar{\boldsymbol{\mu}}, \bar{V}),
+\]
+where $\bar{\mu}, \bar{V}$ are defined in (14) and (15), respectively.
+
+\item \textbf{Step 7.} Draw the probabilities of inclusion $\boldsymbol{\gamma}_{\mu}$ and Equation (16) that have identical expressions as in Equations (14) and (15).
+
+\item \textbf{Step 8.} Draw the shadow rates from the truncated normal distribution:
+\[
+s_t | s_{1:t-1}, s_{t+1:T}, Y_{t \geq t_q - 1}^{(s)}, A, \Sigma \sim \mathcal{TN}(\xi_{1:t-1,t+1:T}, \omega_{1:t-1,t+1:T}, -\infty, ELB),
+\]
+and the full derivations of the moments for $\xi$ and $\omega$ are provided in the Supporting Information of CCMM (2025).
+
+\item \textbf{Step 9.} Update your (nondemeaned) datasets with the shadow rates $s_t$:
+\[
+Y^{(s+1)} = Y_d^{(s)} + \boldsymbol{\mu}^{(s+1)}
+\]
+\[
+Y_{t \geq t_q}^{(s+1)} | s_t = Y^{(s+1)} | i_t = s_t \quad \forall t,
+\]
+which is coming from Equation (5).
+
+\item \textbf{Step 10.} Run the predictive simulation. The predictive density $y_f$ conditional on the reduced form coefficients, $A$, and the error covariance $\Sigma$ is normal. For macro variables, use bounded real rates, and shadow rates for the financial variables.
+\[
+y_f^{(s+1)} | Y^{(s+1)} \sim \mathcal{N}(X^{(s+1)} \bar{A}^{(s+1)}, \Sigma^{*(s+1)}),
+\]
+where $\Sigma^*$s are constructed by simulating volatilities forward, according to Equation (26), for each step of the forecast horizon.
+\end{itemize}
+
+\section{Data, Estimation, and Forecast Evaluation}
+
+The real-time datasets, spanning from the 2005 Q1 to the 2019 Q3 vintages, are extracted from the Archival Federal Reserve Bank of St. Louis database. The variable list, their mnemonics, and transformations are all displayed in Table 2. The data and MATLAB code that support the findings of this study are available in the Supporting Information of this article.
+
+For the forecast evaluation, we use realized values from 2009 Q1 to 2019 Q4. The choice of 2009 Q1 as the first data evaluation point is due to the fact that this is the first quarterly observation where the federal funds rate went below 25 basis points.
+
+For both unconditional forecasting (and structural analysis, see Appendix S1), we employ iterative forecasting. This approach means that if the last sample observation is $T$, we use the $T+1$ forecast is used as a valid observation to forecast $T+2$ without re-estimating the model. The forecast evaluation sample spans 44 quarters, from 2009 Q1 to 2019 Q4.
+
+All series are transformed to stationarity, except for the unemployment rate and the interest rate block. Series in levels are transformed into log differences, and series in percentages are transformed into first differences. The financial series are left in levels because we are estimating their shadow rates and/or censoring their out-of-sample forecasts.
+
+This exercise is performed in real time; the data gathering and the timing are important. The BEA releases its first estimate of the quarterly GDP growth for the first quarter of the year at the end of April. Therefore, the sequence of the data extraction for the first print data happens in April, July, October, and January vintages for the corresponding four quarters of each particular year.
+
+Hodson (2022) evaluates the application of various metrics for model assessment. He specifically contrasts the root mean squared errors (RMSEs) and mean absolute errors (MAEs). According to Hodson, the RMSE is ideal for normal (Gaussian) errors, while the MAE is best suited for Laplacian errors. If errors diverge from these distributions, other metrics prove to be more effective. The Bayesian literature frequently uses other measures that look at the full predictive distribution of the models, instead of solely focusing on point forecasts. As discussed in Koop (2013), ignoring the predictive distributions can result in the researcher missing important information. Therefore, we utilize the RMSE, the MAE, and the continuous ranked probability score (CRPS) to evaluate the predictive performance of our models:
+\begin{equation}
+\text{RMSE}_i = \sqrt{\frac{\sum_{t=1}^{44} \left( y_{i,t}^o - E\left[ y_{i,t} | \text{Data}_T \right] \right)^2}{T}}
+\end{equation}
+\begin{equation}
+\text{MAE}_i = \frac{\sum_{t=1}^{44} \left| y_{i,t}^o - E\left[ y_{i,t} | \text{Data}_T \right] \right|}{T}
+\end{equation}
+
+We present those scores as ratios over a BVAR-SV, which is used as the baseline model. The above metrics present results for point forecasts that essentially ignore the rest of the predictive distribution. To address this, and following Zamo and Naveau (2018), we also present results of the CRPS for forecast evaluation.
+\begin{equation}
+\text{CRPS}_i(\mathcal{F}, y) = \int_{\mathbb{R}} (\mathcal{F}(x) - \mathbb{I}_{\{x \geq y\}})^2 \, dx
+\end{equation}
+
+The CRPS extends the concept of MAE to probabilistic forecasts. It evaluates the entire distribution of the forecasts, with $\mathcal{F}$ representing the cumulative distribution function linked to the predictive density.
+
+Lastly, to evaluate performance over time, we present mean scores for each of the above forecast accuracy metrics (FM), calculated recursively and compared to the recursive mean of the BVAR-SV benchmark. Specifically, the relative recursive means for model $i$ are defined as
+\begin{equation}
+\text{RM}_{FM_{i,t}} = 100 \left( \frac{FM_{i,t}}{FM_{\text{bench},t}} - 1 \right)
+\end{equation}
+where $FM_{i,t}$ and $FM_{\text{bench},t}$ are the recursive averages of the forecast metric for model $i$ and the benchmark model, respectively, at time $t$. A value of $-20$ indicates that model $i$ has a 20\% better forecast performance according to the chosen metric. The first 2 years of the holdout period are excluded, as the initial eight observations are used to set up the recursive means.
+
+\section{Results}
+
+\subsection{Forecast Performance}
+
+This section evaluates the forecast performance of our models. The comparison of the 16 shadow-rate VARs in Tables 3 and 4 is done using both point and density forecasts that are represented by RMSE and CRPS ratios, respectively. The results are shown as ratios relative to a Minnesota VAR with SV (BVAR-SV). Our baseline model is fully unrestricted in its forecasts and is allowed to go below the ELB, implying that, according to this model, the central bank needed a NIRP to stimulate the economy out of the Great Financial Crisis but was bound by the ELB.
+
+The two forecast evaluation windows studied are the full window, 2009 Q1--2019 Q4, and the truncated window, 2009 Q1--2015 Q4. The truncated window only includes periods where the federal funds rate is at or below the ELB. This allows us to explore the models' performance when the policy rate is at or below its ELB, while the full forecast evaluation window offers insights into their general applicability regardless of the ELB. The selected macroeconomic variables for which we present performance metrics are inflation, the unemployment rate, and personal consumption expenditures. The yield curve is covered by examining short-, medium-, and long-term maturities. More specifically, we analyze the forecast performance of the federal funds rate, the 3-month treasury yield, and the 1-year, 3-year, 5-year, and 10-year bond yields. The horizons studied are the 4-quarter-, 8-quarter-, and 16-quarter-ahead forecasts. Table values less than 1 (more than 1) indicate that the shadow-rate model's forecast is more (less) accurate than the baseline model. To assess the significance of those forecast improvements over the BVAR-SV, we use the Giacomini and White (2006) (GW) test using Newey and West (1987) standard errors. Table entries with stars indicate significant differences over the forecasts of the baseline model, at the 10\% (*), 5\% (**), and 1\% (***) significance levels.
+
+Focusing on the RMSEs in Table 3, we observe that all shadow-rate models outperform the benchmark for the four-quarter-ahead forecasts of the federal funds rate. All but three models exhibit statistically significant gains. Similar gains are presented when we look at the CRPS, which evaluates the full predictive density. The CRPS suggests that all models outperform the benchmark for the four-quarter-ahead horizon and in particular the majority of models with SV and/or VSLR assumptions exhibit statistically significant gains at least at the 10\% level. Looking at the yield curve, models that combine shadow rates, SV, and long-run assumptions (viz., the Minnesota-SV-VSLR-SR, the SSVS-SV-VSLR-SR, the BLASSO-SV-VSLR-SR, and the DL-SV-VSLR-SR) perform significantly better for both score metrics, across all maturities and all horizons without exception.
+
+The same set of models exhibits better predictive accuracy for inflation across all horizons and metric scores. In terms of statistical significance, inflation forecasting is consistently better across scores (at least on the 5\% significance level) for both the four-step- and eight-step-ahead forecasts. The improvements extend to forecasting the unemployment rate for 16 quarters ahead, which is also consistently statistically significant across scores. Unemployment rate forecasts for the eight-quarter-ahead horizons are not different from a BVAR-SV. Personal consumption forecast results are mixed, as the more complicated models seem to perform similarly to the benchmark.
+
+The CRPS scores of Table 3 also offer an insight of which is the ``best model,'' at least for density forecasts on the truncated window. The SSVS-SV-VSLR-SR has the minimum loss score for the federal funds rate at 0.34 (at the 1\% significance level), while for the rest of the yield curve and across all forecast horizons, this model outperforms the baseline and with consistent gains at the 10\% level of significance, or higher, which is the case for all four quarters ahead forecasts of the yield curve where gains are at the 1\% level of significance. In addition, the SSVS-SV-VSLR-SR offers the most accurate set of density forecasts for inflation in the four-quarter and eight-quarter-ahead horizons and statistically the same performance as the benchmark for the 16-quarter-ahead inflation forecasts. For the unemployment rate, the model performs better on the 16-quarter-ahead forecasts, and comparable to but not worse than the baseline for the rest of the horizons, while for consumption, it has no difference compared to the baseline.
+
+More interesting insights can be inferred from the CRPS scores in Table 3: the impact SV and/or long-run assumptions have on the predictive accuracy of our shadow-rate VARs. When comparing Minnesota-VSLR-SR, SSVS-VSLR-SR, BLASSO-VSLR-SR, and DL-VSLR-SR (which are homoscedastic) with their SV counterparts (i.e., Minnesota-SV-VSLR-SR, SSVS-SV-VSLR-SR, BLASSO-SV-VSLR-SR, and DL-SV-VSLR-SR) for all models, we observe that the homoscedastic models have values below 1, but only become statistically significant after adding SV. When we compare models without long-run assumptions, that is, when we look at the simple homoscedastic shadow-rate models, the Minnesota-SR, SSVS-SR, BLASSO-SR, DL-SR, versus their SV counterparts, the addition of SV actually worsens the forecasts in most cases, especially in the longer run horizons. This is more pronounced for the machine learning algorithms (SSVS, BLASSO, and DL) rather than the Minnesota prior case. Lastly, the addition of long-run assumptions does not offer significant improvements for all horizons of the yield curve for Minnesota-SR, SSVS-SR, BLASSO-SR, and DL-SR; however, when both SV and long-run assumptions are added, they do become significant. These results imply that the combination of long-run assumptions with SV assumptions creates stronger synergies within the machine learning shrinkage framework.
+
+Switching gears to Table 4, which presents the full forecast evaluation window, including the post-ELB period. Looking at interest rate forecasts, we observe once again that all models with shadow rates, SV, and long-run assumptions outperform the benchmark on the CRPS scores. The gains are consistent and statistically significant across all maturities and across all forecast horizons. We observe similar results for inflation as presented in Table 3, with gains compared to the BVAR-SV for the four-quarter- and eight-quarter-ahead horizons, but for the unemployment rate, the gains have dissipated, except for the SSVS variation. The RMSE scores in the full sample are comparable to Table 3, with a few exceptions on the yield curve that are not statistically significant. Overall, results are persistent across the two samples.
+
+To analyze how forecast performance changes over time and investigate the robustness of the improvements the machine learning shadow-rate VARs offer relative to the BVAR-SV benchmark, we turn to Figure 1, which reports recursive means relative to the baseline. The chosen forecast metric is the CRPS, for horizons $h = 4$ and $h = 16$, and we present results for our nine variables of interest. The graphs focus on the eight machine learning shadow-rate VARs with long-run assumptions, with and without SV. The relative recursive mean score ratios for the four-quarter-ahead horizon show that inflation forecasting is robust over time for all models with SV.
+
+Gains at the beginning of the sample range from approximately 10\% to 20\%, while by the end of the forecast horizon, the gains converge around 10\%. Post-2012, the homoscedastic models take the lead until 2017 Q4 when the SV models regain it for the remainder of the evaluation window. For the unemployment rate, we have worse performance relative to the benchmark for all models. For consumption, the results are mixed, with better performance at the beginning of the sample for the SV models, that worsens over time, with the exception of the Minnesota-SV-VSLR-SR that maintains gains at the end of the forecast period.
+
+For interest rates, the SV models generally perform better than their homoscedastic counterparts over time. The yield curve is more consistent, as post-2012 Q4, all SV models exhibit significant gains for all maturities throughout the recursive samples. The gains are larger for shorter maturities, approximately 50\% for the federal funds rate, the 3-month Treasury bill, and the 1-year bond yield, while for the longer maturities, 3-year, 5-year, and 10-year bond yields, the gains converge to 40\% by the end of the sample. The best performing model for the yield curve for the four-quarter-ahead forecasts is the SSVS-SV-VSLR-SR.
+
+For the longer horizon, the 16-quarter-ahead forecasts, the SV models exhibit average scores that outperform their homoscedastic counterparts in inflation forecasting. The gains begin around the end of 2012 Q4 and maintain this throughout the remainder of the sample. The best models for long-run inflation forecasting are again the SSVS-SV-VSLR-SR, offering approximately 10\% gains by the end of the sample. The unemployment rate forecasts are also consistently better than the benchmark throughout the sample period. All SV models offer gains that range around 30\%--40\% by the end of the forecast evaluation period. The best forecasting model for the long-run unemployment rate is the Minnesota-SV-VSLR-SR. The personal consumption results are mixed and volatile, but based on our analysis of the tables above, both point and density forecasts suggest that these differences from the benchmark are not significant (in most cases). For the yield curve, the recursive means show gains for the SV models and all maturities starting in 2012 Q4. The best performing models are the SSVS-SV-VSLR-SR (better gains in the beginning) and the Minnesota-SV-VSLR-SR (better gains at the end of the forecast period). Both models have gains of 10\% at the start of the forecast evaluation period and stabilize with gains of approximately 50\%--60\% post-2014.
+
+\subsection{Shadow-Rate Estimates}
+
+This section compares machine learning shadow-rate models against the Wu--Xia (2016) benchmark during two periods: real-time estimates from 2009 Q1 to 2015 Q4 and full-sample estimates calculated on the 2019 Q3 vintage.
+
+Table 5 presents the correlations and summary statistics of the shadow-rate models. It highlights another interesting finding of this paper: the high correlation between the machine learning models and the Wu--Xia shadow rate, underscoring their importance as these estimates are independent of each other. Seven models have correlations greater than 0.7. Specifically, for the real-time estimates, BLASSO shadow-rate VAR with SV and long-run assumptions has the highest correlation of 0.88, followed by DL-SV-VSLR-SR 0.8 and SSVS-SV-VSLR-SR 0.79.
+
+However, when examining end-of-sample estimates, these correlations dissipate. The models that demonstrate the highest correlation with end-of-sample estimates are the homoscedastic Minnesota-SR and the BLASSO-SR, recording a correlation of 0.74 and 0.71, respectively. This suggests that these models may better capture shadow-rate dynamics with the revised macroeconomic data available in 2019 Q3.
+
+For the real-time estimates, standard deviations vary across models, with BLASSO-SV-SR exhibiting the highest, indicating greater volatility in its shadow-rate estimates. However, all models produced in this study have a consistently smaller dispersion from the mean compared to the Wu--Xia estimate.
+
+Figure 2 visualizes our discussion above, presenting the BLASSO(G)-SV-VSLR-SR and Minnesota-SR models, which have the highest real-time and highest end-of-sample correlations, respectively.
+
+\section{Conclusions}
+
+This paper contributes to the literature by combining Bayesian machine learning methods with the shadow-rate VARs developed by CCMM (2025). Furthermore, it aims to innovate in modeling long-run assumptions in two ways: first, by informing the prior mean of these models with assumptions stemming from the SPF, and second, by introducing a mixture of normal priors for their variance. Lastly, this paper introduces a real-time dataset, using vintages from the ALFRED database, fully simulating the forecasts that these models could have offered from 2009 onward.
+
+The paper demonstrates that machine learning shadow-rate VAR models can be valuable and offer significant improvements in both short-term and longer term forecasting. Furthermore, adding long-run assumptions and SV to a shadow-rate VAR offers significant improvements, especially for longer horizons. These improvements are present in both point and density forecasts. Furthermore, the recursive means figures offer additional insight into the stability of these gains over time. The results are significant and consistent for critical macroeconomic variables of interest, such as inflation, the unemployment rate, and the yield curve, especially during periods when the economy is at its ELB. These results may be of critical importance for central bankers and policymakers.
+
+%% Endnotes
+\section*{Endnotes}
+\begin{enumerate}
+\item The plug-in approach replaces the policy rate with shadow-rate values of Wu--Xia directly as data.
+
+\item Among others, Appendix S1 contains a structural analysis exercise that demonstrates the limited central bank's capacity to stimulate the economy while at the ELB, resulting in a subdued expansionary monetary policy shock and a more pronounced effect of contractionary monetary policy.
+
+\item Results of our models that are using these longer run assumptions are provided in Appendix S1.
+
+\item Full derivations available on Chan et al. (2019, 391--396).
+
+\item The author declares that the research was conducted in the absence of any commercial or financial relationships that could be construed as a potential conflict of interest. \url{https://alfred.stlouisfed.org/}.
+
+\item This also holds true for the monthly variables, where we get their first quarterly estimate. For example, in April, we get the first take for the first quarter CPI from BLS. However, the January and February CPI estimates are revised.
+
+\item Expanding estimation windows are used to produce forecasts and their distributions. The iterative forecast exercises provide us with the predictive density for $y_{T+h}$ using data available through time $T$ for horizons $h = 1, 4, 8, 12$, and 16. We evaluate point and density forecasts for $T = 44$ quarters. The notation used defines $y_{i,\tau+h}$ as a random variable we are wishing to forecast (e.g., GDP and CPI) and $y_{i,t}^o$ as the observed value of $y_{i,t}$.
+
+\item Differences in the historical data between the Wu--Xia shadow-rate (black line) and the quarterly data used in this paper (red and blue lines) are attributed to the different transformation the authors used, which involved end-of-month yield curve data.
+\end{enumerate}
+
+%% References
+\begin{thebibliography}{99}
+
+\bibitem{Black1995}
+Black, F. (1995). Interest Rates as Options. \textit{Journal of Finance}, 50(5), 1371--1376.
+
+\bibitem{Carriero2022}
+Carriero, A., Chan, J., Clark, T., \& Marcellino, M. (2022). Corrigendum to ``Large Bayesian Vector Autoregressions With Stochastic Volatility and Non-Conjugate Priors'' [J. Econometrics 212 (1) (2019) 137--154]. \textit{Journal of Econometrics}, 227(2), 506--512.
+
+\bibitem{Carriero2019}
+Carriero, A., Clark, T., \& Marcellino, M. (2019). Large Bayesian Vector Autoregressions With Stochastic Volatility and Non-Conjugate Priors. \textit{Journal of Econometrics}, 212(1), 137--154.
+
+\bibitem{Carriero2025}
+Carriero, A., Clark, T., Marcellino, M., \& Mertens, E. (2025). Forecasting With Shadow-Rate VARs. \textit{Quantitative Economics}, 16, 795--822.
+
+\bibitem{Chan2019}
+Chan, J., Koop, G., Poirier, D. J., \& Tobias, J. L. (2019). \textit{Bayesian Econometric Methods} (2nd ed.). Cambridge University Press.
+
+\bibitem{Clark2011}
+Clark, T. E. (2011). Real-Time Density Forecasts From Bayesian Vector Autoregressions With Stochastic Volatility. \textit{Journal of Business \& Economic Statistics}, 29(3), 327--341.
+
+\bibitem{Cogley2002}
+Cogley, T., \& Sargent, T. J. (2002). Evolving Post-World War II U.S. Inflation Dynamics, NBER Macroeconomics Annual 2001. In \textit{NBER Chapters} (Vol. 16, pp. 331--388). National Bureau of Economic Research Inc.
+
+\bibitem{DAgostino2013}
+D'Agostino, A., Gambetti, L., \& Giannone, D. (2013). Macroeconomic Forecasting and Structural Change. \textit{Journal of Applied Econometrics}, 28, 82--101.
+
+\bibitem{Doan1984}
+Doan, T., Litterman, R., \& Sims, C. (1984). Forecasting and Conditional Projection Using Realistic Prior Distributions. \textit{Econometric Reviews}, 3(1), 1--100.
+
+\bibitem{Gefang2023}
+Gefang, D., Koop, G., \& Poon, A. (2023). Forecasting Using Variational Bayesian Inference in Large Vector Autoregressions With Hierarchical Shrinkage. \textit{International Journal of Forecasting}, 39(1), 346--363.
+
+\bibitem{George2008}
+George, E., Sun, D., \& Ni, S. (2008). Bayesian Stochastic Search for VAR Model Restrictions. \textit{Journal of Econometrics}, 142, 553--580.
+
+\bibitem{Giacomini2006}
+Giacomini, R., \& White, H. (2006). Tests of Conditional Predictive Ability. \textit{Econometrica}, 74, 1545--1578.
+
+\bibitem{Hodson2022}
+Hodson, T. O. (2022). Root-Mean-Square Error (RMSE) or Mean Absolute Error (MAE): When to Use Them or Not. \textit{Geoscientific Model Development}, 15, 5481--5487.
+
+\bibitem{Johannsen2021}
+Johannsen, B. K., \& Mertens, E. (2021). A Time-Series Model of Interest Rates With the Effective Lower Bound. \textit{Journal of Money, Credit and Banking}, 53, 1005--1046.
+
+\bibitem{Kim1998}
+Kim, S., Shephard, N., \& Chib, S. (1998). Stochastic Volatility: Likelihood Inference and Comparison With ARCH Models. \textit{Review of Economic Studies}, 65(3), 361--393.
+
+\bibitem{Koop2013}
+Koop, G. (2013). Forecasting With Medium and Large Bayesian VARS. \textit{Journal of Applied Econometrics}, 28(2), 177--203.
+
+\bibitem{Litterman1986}
+Litterman, R. B. (1986). Forecasting With Bayesian Vector Autoregressions---Five Years of Experience. \textit{Journal of Business \& Economic Statistics}, 4(1), 25--38.
+
+\bibitem{Louzis2019}
+Louzis, D. P. (2019). Steady-State Modelling and Macroeconomic Forecasting Quality. \textit{Journal of Applied Econometrics}, 34, 285--314.
+
+\bibitem{Newey1987}
+Newey, W. K., \& West, K. D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. \textit{Econometrica}, 55(3), 703--708.
+
+\bibitem{Primiceri2005}
+Primiceri, G. (2005). Time Varying Structural Vector Autoregressions and Monetary Policy. \textit{Review of Economic Studies}, 72(3), 821--852.
+
+\bibitem{Sims1980}
+Sims, C. A. (1980). Macroeconomics and Reality. \textit{Econometrica}, 48(1), 1--48.
+
+\bibitem{Villani2009}
+Villani, M. (2009). Steady-State Priors for Vector Autoregressions. \textit{Journal of Applied Econometrics}, 24(4), 630--650.
+
+\bibitem{WuXia2016}
+Wu, J. C., \& Xia, F. D. (2016). Measuring the Macroeconomic Impact of Monetary Policy at the Zero Lower Bound. \textit{Journal of Money, Credit and Banking}, 48, 253--291.
+
+\bibitem{WuZhang2019}
+Wu, J. C., \& Zhang, J. (2019). A Shadow Rate New Keynesian Model. \textit{Journal of Economic Dynamics and Control}, 107, 103728.
+
+\bibitem{Zamo2018}
+Zamo, M., \& Naveau, P. (2018). Estimation of the Continuous Ranked Probability Score With Limited Information and Applications to Ensemble Weather Forecasts. \textit{Mathematical Geoscience}, 50, 209--234.
+
+\end{thebibliography}
+
+
+
+\end{document}

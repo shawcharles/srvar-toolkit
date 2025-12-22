@@ -1,0 +1,38 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{array}
+
+\begin{document}
+
+\begin{table}[h]
+\centering
+\caption{Data gathered from the ALFRED-MD. Includes vintages from 2005 Q1 to 2019 Q4. The transformations legend is the following: 6: log second differences, 5: log differences, 4: log transformation, 3: second differences, 2: first differences, 1: no transformation. The table mnemonic is the shortened name of the variable as used in the results table, while the Minnesota prior column denotes whether shrinkage of the variable coefficient is towards 0 or towards 1 (random walk).}
+\label{tab:alfred_data}
+\begin{tabular}{lllll}
+\toprule
+\textbf{Variable}               & \textbf{ALFRED code} & \textbf{Table mnemonic} & \textbf{Transformation code} & \textbf{Minnesota prior} \\
+\midrule
+CPI                             & CPIAUCSL              & CPI                     & 5.00                          & 0.00                    \\
+Real GDP                        & GDP                   & GDP                     & 5.00                          & 0.00                    \\
+Unemployment                    & UNRATE                & UNR                     & 1.00                          & 1.00                    \\
+PPI (All Commodities)           & PPIACO                & PPI                     & 5.00                          & 0.00                    \\
+Nominal Personal Income         & PINCOME               & PIN                     & 5.00                          & 0.00                    \\
+Nonfarm Payrolls                & PAYEMS                & PAY                     & 5.00                          & 0.00                    \\
+Industrial Production           & INDPRO                & IND                     & 5.00                          & 0.00                    \\
+Housing Starts                  & HOUST                 & HOU                     & 4.00                          & 1.00                    \\
+Real Consumption                & PCECC96               & PCE                     & 5.00                          & 0.00                    \\
+M2 Money Stock                  & M2SL                  & M2S                     & 6.00                          & 0.00                    \\
+Capacity Utilization            & MCUMFN                & MCU                     & 2.00                          & 0.00                    \\
+USD/GBP FX Rate                 & EXUSUK                & EXU                     & 2.00                          & 0.00                    \\
+Federal Funds Rate              & FEDFUNDS              & FED                     & 1.00                          & 1.00                    \\
+6-Month TBill                   & TB6MS                 & 6M                      & 1.00                          & 1.00                    \\
+1-Year Yield                    & GS1                   & 1Y                      & 1.00                          & 1.00                    \\
+3-Year Yield                    & GS3                   & 3Y                      & 1.00                          & 1.00                    \\
+5-Year Yield                    & GS5                   & 5Y                      & 1.00                          & 1.00                    \\
+10-Year Yield                   & GS10                  & 10Y                     & 1.00                          & 1.00                    \\
+BAA Yield                       & BAA                   & BAA                     & 1.00                          & 1.00                    \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

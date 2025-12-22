@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checking / lint / format caches
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# MATLAB / replication artifacts
+*.m
+*.mat
+*.mlx
+
+# OS
+.DS_Store
+
+# Project outputs / artifacts
+runs/
+output/
+
+# Sphinx
+docs/_build/
+
+# Temporary files
+*.tmp
+*.log
+
+# Private
+
+docs/blueprint/
+functions/
+README_OLD.md
+audit.md
+memory-bank/
+
+papers/
