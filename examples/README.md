@@ -2,6 +2,8 @@
 
 This folder contains runnable scripts demonstrating common `srvar-toolkit` workflows.
 
+Most examples use `examples/data/example.csv` so you can run them as-is.
+
 ## Recommended order
 
 1. `quickstart_check_version.py`
@@ -18,29 +20,22 @@ This folder contains runnable scripts demonstrating common `srvar-toolkit` workf
   Prints the installed `srvar-toolkit` version.
 
 - `var_utils.py`
-  Minimal utilities demo (design matrix construction and a stationarity check).
+  Demonstrates low-level VAR utilities (design matrix construction and a stationarity check).
 
 - `bvar_basic_fit_forecast.py`
-  Fits a simple conjugate BVAR and produces a small posterior predictive forecast.
+  Loads `examples/data/example.csv`, fits a conjugate BVAR, and produces a small posterior predictive forecast.
 
 - `bvar_minnesota_fit_forecast.py`
-  Fits a BVAR with a Minnesota-style prior and produces a small forecast.
+  Loads `examples/data/example.csv`, fits a Minnesota-prior BVAR, and forecasts forward.
 
 - `elb_fit_forecast.py`
-  Fits a shadow-rate (ELB) model on a toy dataset and forecasts forward.
+  Loads `examples/data/example.csv`, fits a shadow-rate (ELB) model, and forecasts forward.
 
 - `sv_fit_forecast.py`
-  Fits a stochastic-volatility VAR (SVRW) on a toy dataset and forecasts forward.
+  Loads `examples/data/example.csv`, fits a stochastic-volatility VAR (SVRW), and forecasts forward.
 
 - `elb_sv_fit_forecast.py`
-  Fits a combined ELB + stochastic volatility model and forecasts forward.
+  Loads `examples/data/example.csv`, fits a combined ELB + stochastic volatility model, and forecasts forward.
 
 - `elb_sv_fit_forecast_plots.py`
-  Fits an ELB + SV model on a synthetic dataset with a time index and saves plots.
-
-- `replication_choose_var1.py`
-  A larger replication-style script (more research-oriented). Useful as a template for experiments.
-
-## Note on legacy filenames
-
-You may also see `phase*.py` scripts. Those were used during an earlier refactor and are kept for backward compatibility, but the scripts listed above are the recommended entrypoints.
+  Fits an ELB + SV model on a synthetic, time-indexed dataset and writes plots into `outputs/example_plots/`.
