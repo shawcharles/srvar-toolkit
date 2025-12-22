@@ -7,9 +7,6 @@ This package implements a small, testable SRVAR workflow:
 - Shadow-rate / ELB data augmentation.
 - Diagonal stochastic volatility (SVRW).
 - Combined SV + ELB model.
-
-If you need the original MATLAB replication code, see:
-https://github.com/MichaelGrammmatikopoulos/MLSRVARs
  
 ## Methodology / capability matrix
 
@@ -27,10 +24,6 @@ https://github.com/MichaelGrammmatikopoulos/MLSRVARs
 | Dirichlet-Laplace prior | Dirichlet-Laplace shrinkage prior | N/A | Not implemented |
 
 ## Install
-
-```bash
-pip install srvar-toolkit
-```
 
 Editable install:
 
@@ -70,3 +63,9 @@ Run tests:
 ```bash
 pytest
 ```
+
+## Credits
+
+If you need the original MATLAB replication code, see: https://github.com/MichaelGrammmatikopoulos/MLSRVARs
+
+Grammatikopoulos, M. 2025. "Forecasting With Machine Learning Shadow-Rate VARs." Journal of Forecasting 1–17. https://doi.org/10.1002/for.70041.
