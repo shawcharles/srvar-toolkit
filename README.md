@@ -49,16 +49,6 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<div align="center" style="display: flex; justify-content: center; gap: 10px;">
-  <div style="height: 300px; display: flex; align-items: center;">
-    <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" style="max-height: 100%; width: auto;">
-  </div>
-  <div style="height: 300px; display: flex; align-items: center;">
-    <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" style="max-height: 100%; width: auto;">
-  </div>
-</div>
-
-
 <br />
 
 **srvar-toolkit** is a lightweight, testable implementation of Shadow-Rate Vector Autoregression (SRVAR) models for macroeconomic forecasting. It provides a complete Bayesian workflow for fitting VARs with:
@@ -80,6 +70,15 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 [![Pandas][pandas-badge]][pandas-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<div align="center" style="display: flex; justify-content: center; gap: 10px;">
+  <div style="height: 300px; display: flex; align-items: center;">
+    <img src="plots/shadow_rate_r.png" alt="Shadow Rate Example" style="max-height: 100%; width: auto;">
+  </div>
+  <div style="height: 300px; display: flex; align-items: center;">
+    <img src="plots/forecast_fan_r_observed.png" alt="Forecast Fan Chart" style="max-height: 100%; width: auto;">
+  </div>
+</div>
 
 ---
 
