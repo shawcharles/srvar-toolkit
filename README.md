@@ -259,11 +259,11 @@ See:
 - [x] Combined ELB + SV model
 - [x] Forecasting with fan charts
 - [x] Plotting utilities
-- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
-- [ ] Steady-state VAR parameterisation
 - [x] Bayesian LASSO prior
+- [ ] Steady-state VAR parameterisation
 - [ ] Dirichlet-Laplace prior
 - [ ] Full-covariance stochastic volatility
+- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
 
 See the [open issues](https://github.com/shawcharles/srvar-toolkit/issues) for a full list of proposed features.
 
