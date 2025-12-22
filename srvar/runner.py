@@ -143,7 +143,8 @@ def build_model(cfg: dict[str, Any]) -> ModelSpec:
             bound = _as_float(_get(elb_cfg, "bound", required=True), key="model.elb.bound")
             applies_to = _as_str_list(_get(elb_cfg, "applies_to", required=True), key="model.elb.applies_to")
             tol = _as_float(_get(elb_cfg, "tol", default=1e-8), key="model.elb.tol")
-            elb_spec = ElbSpec(bound=bound, applies_to=applies_to, tol=tol, enabled=True)
+            init_offset = _as_float(_get(elb_cfg, "init_offset", default=0.05), key="model.elb.init_offset")
+            elb_spec = ElbSpec(bound=bound, applies_to=applies_to, tol=tol, init_offset=init_offset, enabled=True)
 
     vol_spec: VolatilitySpec | None = None
     vol_cfg = _get(model_cfg, "volatility", default=None)

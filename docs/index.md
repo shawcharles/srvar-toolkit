@@ -66,6 +66,7 @@ Complete function and class documentation with type signatures and examples.
 | Shadow-Rate / ELB | Latent shadow-rate sampling | ✅ Supported |
 | Stochastic Volatility | Diagonal log-variance random-walk | ✅ Supported |
 | Variable Selection (SSVS) | Spike-and-slab priors | ✅ Supported |
+| Bayesian LASSO (BLASSO) | Shrinkage prior for VAR coefficients | ✅ Supported |
 | Forecasting | Posterior predictive simulation | ✅ Supported |
 
 ---

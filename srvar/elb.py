@@ -33,6 +33,7 @@ class ElbSpec:
     bound: float
     applies_to: list[str] = field(default_factory=list)
     tol: float = 1e-8
+    init_offset: float = 0.05
     enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -40,6 +41,8 @@ class ElbSpec:
             raise ValueError("elb.bound must be finite")
         if self.tol < 0 or not np.isfinite(self.tol):
             raise ValueError("elb.tol must be finite and >= 0")
+        if self.init_offset < 0 or not np.isfinite(self.init_offset):
+            raise ValueError("elb.init_offset must be finite and >= 0")
         if self.enabled and len(self.applies_to) < 1:
             raise ValueError("elb.applies_to must not be empty when enabled")
 

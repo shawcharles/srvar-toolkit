@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 import numpy as np
 import scipy.linalg
@@ -59,6 +60,65 @@ _KSC_SQRTSIGI = np.sqrt(_KSC_SIGI)
 _LOG_KSC_PI = np.log(_KSC_PI)
 _LOG_SQRT_2PI = 0.5 * np.log(2.0 * np.pi)
 
+try:
+    import numba as _nb
+
+    _HAVE_NUMBA = True
+except Exception:  # pragma: no cover
+    _nb = None
+    _HAVE_NUMBA = False
+
+
+def _numba_enabled() -> bool:
+    v = os.getenv("SRVAR_USE_NUMBA", "0").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+
+if _HAVE_NUMBA:
+
+    @_nb.njit(cache=True)
+    def _sample_mixture_indicators_numba(
+        y: np.ndarray,
+        ht: np.ndarray,
+        u: np.ndarray,
+        ksc_mi: np.ndarray,
+        ksc_sqrtsigi: np.ndarray,
+        log_ksc_pi: np.ndarray,
+    ) -> np.ndarray:
+        t = y.shape[0]
+        out = np.empty(t, dtype=np.int64)
+        log_sqrtsigi = np.log(ksc_sqrtsigi)
+
+        for i in range(t):
+            maxv = -1.0e300
+            log_q = np.empty(7, dtype=np.float64)
+
+            for k in range(7):
+                loc = ht[i] + ksc_mi[k]
+                z = (y[i] - loc) / ksc_sqrtsigi[k]
+                loglik = -_LOG_SQRT_2PI - log_sqrtsigi[k] - 0.5 * z * z
+                v = log_ksc_pi[k] + loglik
+                log_q[k] = v
+                if v > maxv:
+                    maxv = v
+
+            s = 0.0
+            for k in range(7):
+                s += np.exp(log_q[k] - maxv)
+
+            c = 0.0
+            target = u[i]
+            chosen = 0
+            for k in range(7):
+                c += np.exp(log_q[k] - maxv) / s
+                if target <= c:
+                    chosen = k
+                    break
+
+            out[i] = chosen
+
+        return out
+
 
 def log_e2_star(e: np.ndarray, *, epsilon: float) -> np.ndarray:
     """Compute the log-squared residual transform used for SV mixture sampling.
@@ -101,6 +161,10 @@ def sample_mixture_indicators(*, y_star: np.ndarray, h: np.ndarray, rng: np.rand
 
     if y.shape != ht.shape:
         raise ValueError("y_star and h must have the same shape")
+
+    if _HAVE_NUMBA and _numba_enabled():
+        u = rng.random(y.shape[0])
+        return _sample_mixture_indicators_numba(y, ht, u, _KSC_MI, _KSC_SQRTSIGI, _LOG_KSC_PI).astype(int)
 
     loc = ht[:, None] + _KSC_MI[None, :]
     z = (y[:, None] - loc) / _KSC_SQRTSIGI[None, :]
