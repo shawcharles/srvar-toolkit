@@ -19,5 +19,5 @@ The Python toolkit supports an SSVS-style prior for reduced-form VAR coefficient
 This implementation is designed for practical forecasting workflows rather than reproducing every shrinkage variant in the paper.
 
 Related:
-- {doc}`reference/api`
-- {doc}`theory/mcmc`
+- {doc}`../reference/api`
+- {doc}`mcmc`

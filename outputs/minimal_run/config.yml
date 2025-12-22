@@ -1,0 +1,25 @@
+data:
+  csv_path: "examples/data/example.csv"
+  date_column: "date"
+  variables: ["r", "y"]
+
+model:
+  p: 4
+  include_intercept: true
+
+prior:
+  family: "niw"
+  method: "minnesota"
+
+sampler:
+  draws: 2000
+  burn_in: 500
+  thin: 2
+  seed: 42
+
+forecast:
+  horizons: [1, 4, 8, 12]
+
+output:
+  out_dir: "outputs/run"
+  save_plots: false

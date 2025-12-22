@@ -37,5 +37,5 @@ At each iteration:
 - For long runs, profile your model and consider multiple shorter chains rather than a single very long chain.
 
 Related:
-- {doc}`getting-started/quickstart`
-- {doc}`reference/api`
+- {doc}`../getting-started/quickstart`
+- {doc}`../reference/api`

@@ -34,5 +34,5 @@ The Python toolkit implements a practical SRVAR workflow centred on:
 It does **not** currently implement the full structural SVAR/block-hybrid state-space system described in the paper. Instead, it provides an ELB-aware VAR likelihood by treating ELB-bound observations as latent and sampling them subject to the constraint.
 
 Next pages:
-- {doc}`theory/elb`
-- {doc}`theory/mcmc`
+- {doc}`elb`
+- {doc}`mcmc`

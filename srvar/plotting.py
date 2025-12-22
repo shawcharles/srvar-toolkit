@@ -17,6 +17,8 @@ def _require_matplotlib() -> Any:
 
 def _time_index_to_array(index: Any) -> np.ndarray:
     try:
+        if hasattr(index, "to_numpy"):
+            return np.asarray(index.to_numpy())
         return np.asarray(index)
     except Exception:
         return np.arange(len(index), dtype=int)

@@ -216,6 +216,26 @@ fig.savefig("volatility.png", dpi=150, bbox_inches="tight")
 
 _For more examples, see the [`examples/`](examples/) directory._
 
+### CLI + YAML (config-driven runs)
+
+For production-style usage, you can run the toolkit from a YAML configuration file.
+
+```bash
+# Validate a config (checks schema, variable names, and basic compatibility)
+srvar validate config/demo_config.yaml
+
+# Run fit (+ optional forecast/plots depending on the config)
+srvar run config/demo_config.yaml
+
+# Override output directory
+srvar run config/demo_config.yaml --out outputs/my_run
+```
+
+See:
+
+- `config/demo_config.yaml` (comment-rich template)
+- `config/minimal_config.yaml` (minimal runnable)
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---

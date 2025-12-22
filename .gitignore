@@ -61,8 +61,9 @@ audit.md
 memory-bank/
 
 papers/
-
 assets/paper
-.env
-
 docs/code-review-2024-12.md
+arXiv-preprint/
+
+# API keys
+.env

@@ -32,6 +32,7 @@ autosummary_generate = True
 
 source_suffix = {
     ".md": "markdown",
+    ".rst": "restructuredtext",
 }
 
 myst_enable_extensions = [
@@ -41,7 +42,13 @@ myst_enable_extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "blueprint/**",
+    "code-review-2024-12.md",
+]
 
 html_theme = "furo"
 

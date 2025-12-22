@@ -393,34 +393,45 @@ def fit(
 
     This is the primary user-facing entry point for estimating models in this package.
 
-    Supported configurations:
+    Supported configurations
+    ------------------------
     - Conjugate BVAR with Normal-Inverse-Wishart prior (``prior.family='niw'``)
     - Spike-and-slab variable selection (``prior.family='ssvs'``)
     - Effective lower bound (ELB) data-augmentation Gibbs sampler (``model.elb.enabled``)
     - Stochastic volatility random-walk (SVRW) (``model.volatility.enabled``; requires NIW)
 
-    Args:
-        dataset: Observed data (T, N). When ELB is enabled, some variables are interpreted as
-            censored at the ELB.
-        model: Model configuration, including lag order ``p`` and optional ELB/SV specs.
-        prior: Prior configuration. The prior family is determined by ``prior.family``.
-        sampler: MCMC configuration (draws, burn-in, thinning).
-        rng: Optional NumPy RNG.
+    Parameters
+    ----------
+    dataset:
+        Observed data (T, N). When ELB is enabled, some variables are interpreted as
+        censored at the ELB.
+    model:
+        Model configuration, including lag order ``p`` and optional ELB/SV specs.
+    prior:
+        Prior configuration. The prior family is determined by ``prior.family``.
+    sampler:
+        MCMC configuration (draws, burn-in, thinning).
+    rng:
+        Optional NumPy RNG.
 
-    Returns:
-        FitResult with posterior parameters and/or stored posterior draws depending on the
+    Returns
+    -------
+    FitResult
+        Fit result with posterior parameters and/or stored posterior draws depending on the
         model configuration.
 
-        - For conjugate NIW without ELB/SV, ``FitResult.posterior`` is populated and
-          ``beta_draws``/``sigma_draws`` are produced by direct sampling.
-        - For Gibbs samplers (ELB, SSVS, SV), burn-in and thinning are applied online and
-          the returned ``*_draws`` arrays contain only kept draws.
+    Notes
+    -----
+    For conjugate NIW without ELB/SV, ``FitResult.posterior`` is populated and
+    ``beta_draws``/``sigma_draws`` are produced by direct sampling.
 
-    Notes:
-        When ELB is enabled, the latent series is initialized by setting observations at or
-        below the bound to a small amount below the bound (currently ``bound - 0.05``). This
-        is a numerical initialization choice intended to avoid starting exactly at the
-        truncation boundary.
+    For Gibbs samplers (ELB, SSVS, SV), burn-in and thinning are applied online and the
+    returned ``*_draws`` arrays contain only kept draws.
+
+    When ELB is enabled, the latent series is initialized by setting observations at or
+    below the bound to a small amount below the bound (currently ``bound - 0.05``). This is
+    a numerical initialization choice intended to avoid starting exactly at the truncation
+    boundary.
     """
     prior_family = prior.family.lower()
     if prior_family not in {"niw", "ssvs"}:
@@ -462,28 +473,36 @@ def forecast(
 
     Forecasts are produced by Monte Carlo simulation using posterior parameter draws.
 
-    Args:
-        fit: Result from :func:`srvar.api.fit`.
-        horizons: List of forecast horizons (in steps) requested by the caller.
-            Internally, simulations are generated out to ``max(horizons)`` and the returned
-            arrays have length ``H = max(horizons)`` along the horizon dimension.
-        draws: Number of predictive simulation paths.
-        quantile_levels: Quantiles to compute from the simulated draws. Defaults to
-            ``[0.1, 0.5, 0.9]``.
-        rng: Optional NumPy RNG.
+    Parameters
+    ----------
+    fit:
+        Result from :func:`srvar.api.fit`.
+    horizons:
+        List of forecast horizons (in steps) requested by the caller. Internally,
+        simulations are generated out to ``H = max(horizons)``.
+    draws:
+        Number of predictive simulation paths.
+    quantile_levels:
+        Quantiles to compute from the simulated draws. Defaults to ``[0.1, 0.5, 0.9]``.
+    rng:
+        Optional NumPy RNG.
 
-    Returns:
-        ForecastResult containing:
-        - ``draws``: simulated observations with shape (D, H, N)
-        - ``mean``: mean across draws with shape (H, N)
-        - ``quantiles``: dict mapping each requested quantile to an array (H, N)
+    Returns
+    -------
+    ForecastResult
+        Forecast result containing:
 
-        If ELB is enabled in the fitted model, returned ``draws`` are the observed (floored)
-        draws, and ``latent_draws`` contains the unconstrained latent draws.
+        - ``draws``: simulated observations with shape ``(D, H, N)``
+        - ``mean``: mean across draws with shape ``(H, N)``
+        - ``quantiles``: dict mapping each requested quantile to an array ``(H, N)``
 
-    Example:
-        If you call ``forecast(fit, horizons=[1, 3], ...)`` then ``result.mean[0]``
-        corresponds to horizon 1 and ``result.mean[2]`` corresponds to horizon 3.
+    Notes
+    -----
+    If ELB is enabled in the fitted model, returned ``draws`` are the observed (floored)
+    draws, and ``latent_draws`` contains the unconstrained latent draws.
+
+    If you call ``forecast(fit, horizons=[1, 3], ...)`` then ``result.mean[0]`` corresponds
+    to horizon 1 and ``result.mean[2]`` corresponds to horizon 3.
     """
     if rng is None:
         rng = np.random.default_rng()

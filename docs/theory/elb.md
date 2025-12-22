@@ -29,5 +29,5 @@ When ELB support is enabled via `ElbSpec`, `fit()` uses Gibbs steps that alterna
 With stochastic volatility enabled, the conditional distribution accounts for time-varying variance through the current log-volatility state.
 
 Related:
-- {doc}`theory/stochastic-volatility`
-- {doc}`theory/mcmc`
+- {doc}`stochastic-volatility`
+- {doc}`mcmc`

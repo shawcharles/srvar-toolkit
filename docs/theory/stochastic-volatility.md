@@ -25,4 +25,4 @@ Implementation notes:
 - the log-volatility state is sampled with a banded precision representation.
 
 Related:
-- {doc}`theory/mcmc`
+- {doc}`mcmc`

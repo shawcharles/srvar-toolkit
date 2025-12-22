@@ -1,4 +1,4 @@
-# API reference
+# `srvar.api`
 
 ```{eval-rst}
 .. automodule:: srvar.api
