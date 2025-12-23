@@ -63,15 +63,15 @@ def fit(
     boundary.
     """
     prior_family = prior.family.lower()
-    if prior_family not in {"niw", "ssvs", "blasso"}:
-        raise ValueError("only prior.family in {'niw','ssvs','blasso'} is supported")
+    if prior_family not in {"niw", "ssvs", "blasso", "dl"}:
+        raise ValueError("only prior.family in {'niw','ssvs','blasso','dl'} is supported")
 
     if rng is None:
         rng = np.random.default_rng()
 
     if model.volatility is not None and model.volatility.enabled:
-        if prior_family not in {"niw", "blasso"}:
-            raise ValueError("stochastic volatility currently requires prior.family in {'niw','blasso'}")
+        if prior_family not in {"niw", "blasso", "dl"}:
+            raise ValueError("stochastic volatility currently requires prior.family in {'niw','blasso','dl'}")
         return _fit_svrw(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
 
     if model.elb is None or not model.elb.enabled:
@@ -175,6 +175,9 @@ def forecast(
             "fit does not contain posterior parameters or stored draws; "
             "this can happen if burn_in/thin leaves zero kept draws"
         )
+
+    if fit.model.steady_state is not None and fit.beta_draws is None:
+        raise ValueError("steady_state forecasting requires stored beta_draws; reduce burn_in or thin")
 
     base_dataset = fit.latent_dataset if fit.latent_dataset is not None else fit.dataset
     if base_dataset.T < p:

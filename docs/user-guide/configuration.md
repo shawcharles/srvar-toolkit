@@ -8,7 +8,7 @@ Most workflows use four objects:
 
 - `Dataset`: data container (values + variable names + time index)
 - `ModelSpec`: model structure (lag order, intercept, ELB, stochastic volatility)
-- `PriorSpec`: prior family and hyperparameters (NIW or SSVS)
+- `PriorSpec`: prior family and hyperparameters (NIW, SSVS, BLASSO, or DL)
 - `SamplerConfig`: MCMC controls (draws, burn-in, thinning)
 
 ## YAML configuration (CLI)
@@ -74,7 +74,7 @@ The backtest config is intentionally CLI-first and is designed to be reproducibl
 - Larger `p` increases the number of regressors `K` and typically increases runtime.
 - A common starting point in macro data is `p=4` (quarterly) or `p=12` (monthly), but you should validate using forecast performance.
 
-## NIW vs SSVS
+## Choosing a prior family
 
 ### NIW (conjugate)
 
@@ -89,6 +89,39 @@ Use SSVS when you want posterior inclusion probabilities over predictors.
 
 - Use `PriorSpec.from_ssvs(k=..., n=..., include_intercept=...)`.
 - The intercept can be forced included (`fix_intercept=True`) when an intercept is present.
+
+### BLASSO
+
+Use BLASSO when you want continuous shrinkage of coefficient rows.
+
+- Use `PriorSpec.from_blasso(k=..., n=..., include_intercept=..., mode='global'|'adaptive')`.
+
+YAML example:
+
+```yaml
+prior:
+  family: blasso
+  blasso:
+    mode: global
+    tau_init: 10000
+    lambda_init: 2.0
+```
+
+### DL (Dirichlet–Laplace)
+
+Use DL when you want global–local shrinkage over individual VAR coefficients.
+
+- Use `PriorSpec.from_dl(k=..., n=..., include_intercept=...)`.
+
+YAML example:
+
+```yaml
+prior:
+  family: dl
+  dl:
+    abeta: 0.5
+    dl_scaler: 0.1
+```
 
 ## Enabling ELB (shadow-rate augmentation)
 
@@ -120,6 +153,32 @@ Stochastic volatility is controlled by `ModelSpec(volatility=VolatilitySpec(...)
 In SV models:
 
 - `FitResult.h_draws` contains log-volatility state draws.
+
+## Steady-state VAR parameterization (SSP)
+
+SSP replaces the explicit intercept with a steady-state mean vector `mu`.
+
+Notes:
+
+- SSP requires `include_intercept: true`.
+- `model.steady_state.mu0` must have length `N` (number of variables).
+- `model.steady_state.v0_mu` can be a scalar or a length-`N` list.
+
+YAML example:
+
+```yaml
+model:
+  p: 2
+  include_intercept: true
+  steady_state:
+    mu0: [0.02, 0.03]  # length N
+    v0_mu: 0.01        # scalar or list length N
+    ssvs:
+      enabled: false
+      spike_var: 0.0001
+      slab_var: 0.01
+      inclusion_prob: 0.5
+```
 
 ## Sampler configuration
 

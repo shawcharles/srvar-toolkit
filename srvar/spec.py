@@ -11,6 +11,46 @@ import numpy as np
 
 
 @dataclass(frozen=True, slots=True)
+class MuSSVSSpec:
+    spike_var: float = 1e-4
+    slab_var: float = 100.0
+    inclusion_prob: float = 0.5
+
+    def __post_init__(self) -> None:
+        if self.spike_var <= 0 or not np.isfinite(self.spike_var):
+            raise ValueError("spike_var must be finite and > 0")
+        if self.slab_var <= 0 or not np.isfinite(self.slab_var):
+            raise ValueError("slab_var must be finite and > 0")
+        if not (0.0 < float(self.inclusion_prob) < 1.0):
+            raise ValueError("inclusion_prob must be in (0, 1)")
+
+
+@dataclass(frozen=True, slots=True)
+class SteadyStateSpec:
+    mu0: np.ndarray  # (N,)
+    v0_mu: float | np.ndarray
+    ssvs: MuSSVSSpec | None = None
+
+    def __post_init__(self) -> None:
+        m = np.asarray(self.mu0, dtype=float).reshape(-1)
+        if m.ndim != 1 or m.shape[0] < 1:
+            raise ValueError("mu0 must be a 1D array of shape (N,)")
+        if np.any(~np.isfinite(m)):
+            raise ValueError("mu0 must be finite")
+
+        if isinstance(self.v0_mu, (float, int, np.floating, np.integer)) and not isinstance(self.v0_mu, bool):
+            v = float(self.v0_mu)
+            if not np.isfinite(v) or v <= 0:
+                raise ValueError("v0_mu must be finite and > 0")
+        else:
+            v = np.asarray(self.v0_mu, dtype=float).reshape(-1)
+            if v.shape != (m.shape[0],):
+                raise ValueError("v0_mu must be a scalar or have shape (N,)")
+            if np.any(~np.isfinite(v)) or np.any(v <= 0):
+                raise ValueError("v0_mu must be finite and > 0")
+
+
+@dataclass(frozen=True, slots=True)
 class ModelSpec:
     """Model configuration for VAR/SRVAR estimation.
 
@@ -20,6 +60,8 @@ class ModelSpec:
         VAR lag order.
     include_intercept:
         Whether to include an intercept term in the VAR design matrix.
+    steady_state:
+        Optional steady-state configuration.
     elb:
         Optional effective-lower-bound (ELB) configuration. When enabled, specified
         variables are treated as censored at the bound and latent shadow values are
@@ -35,12 +77,16 @@ class ModelSpec:
     """
     p: int
     include_intercept: bool = True
+    steady_state: SteadyStateSpec | None = None
     elb: ElbSpec | None = None
     volatility: VolatilitySpec | None = None
 
     def __post_init__(self) -> None:
         if self.p < 1:
             raise ValueError("p must be >= 1")
+
+        if self.steady_state is not None and not self.include_intercept:
+            raise ValueError("steady_state requires include_intercept=True")
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +178,31 @@ class BLassoSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class DLSpec:
+    """Hyperparameters for the Dirichlet–Laplace (DL) shrinkage prior.
+
+    This is a global–local shrinkage prior implemented to match the MATLAB reference
+    code in ``functions/parfor_vintages.m`` (model mnemonic "DirLap").
+
+    Parameters
+    ----------
+    abeta:
+        Dirichlet concentration parameter (named ``abeta`` in the MATLAB code).
+    dl_scaler:
+        Small positive initialization scale used for the latent DL variables
+        (named ``DL_scaler`` in the MATLAB code).
+    """
+    abeta: float = 0.5
+    dl_scaler: float = 0.1
+
+    def __post_init__(self) -> None:
+        for name in ["abeta", "dl_scaler"]:
+            v = float(getattr(self, name))
+            if not np.isfinite(v) or v <= 0:
+                raise ValueError(f"{name} must be finite and > 0")
+
+
+@dataclass(frozen=True, slots=True)
 class PriorSpec:
     """Prior specification wrapper.
 
@@ -141,18 +212,23 @@ class PriorSpec:
     Parameters
     ----------
     family:
-        Prior family identifier. Currently supported values are ``"niw"`` and
-        ``"ssvs"``.
+        Prior family identifier. Supported values include ``"niw"``, ``"ssvs"``,
+        ``"blasso"``, and ``"dl"``.
     niw:
         NIW parameter block. This is required for both families because SSVS uses
         a NIW-like structure with a modified coefficient covariance ``V0``.
     ssvs:
         Optional SSVS hyperparameters (required when ``family='ssvs'``).
+    blasso:
+        Optional Bayesian Lasso hyperparameters (required when ``family='blasso'``).
+    dl:
+        Optional Dirichlet–Laplace hyperparameters (required when ``family='dl'``).
     """
     family: str
     niw: NIWPrior
     ssvs: SSVSSpec | None = None
     blasso: BLassoSpec | None = None
+    dl: DLSpec | None = None
 
     @staticmethod
     def niw_default(*, k: int, n: int) -> "PriorSpec":
@@ -315,7 +391,7 @@ class PriorSpec:
         spike_var, slab_var, inclusion_prob:
             SSVS hyperparameters.
         intercept_slab_var:
-            Optional slab variance override for the intercept coefficient row.
+            Optional slab variance override for the intercept term.
         fix_intercept:
             Whether to force inclusion of the intercept row.
         """
@@ -414,6 +490,49 @@ class PriorSpec:
         )
         _ = bool(include_intercept)
         return PriorSpec(family="blasso", niw=niw, blasso=spec)
+
+    @staticmethod
+    def from_dl(
+        *,
+        k: int,
+        n: int,
+        include_intercept: bool = True,
+        m0: np.ndarray | None = None,
+        s0: np.ndarray | None = None,
+        nu0: float | None = None,
+        abeta: float = 0.5,
+        dl_scaler: float = 0.1,
+    ) -> "PriorSpec":
+        if k < 1:
+            raise ValueError("k must be >= 1")
+        if n < 1:
+            raise ValueError("n must be >= 1")
+
+        if m0 is None:
+            m0a = np.zeros((k, n), dtype=float)
+        else:
+            m0a = np.asarray(m0, dtype=float)
+            if m0a.shape != (k, n):
+                raise ValueError("m0 must have shape (K, N)")
+
+        if s0 is None:
+            s0a = np.eye(n, dtype=float)
+        else:
+            s0a = np.asarray(s0, dtype=float)
+            if s0a.shape != (n, n):
+                raise ValueError("s0 must have shape (N, N)")
+
+        nu0a = float(n + 2) if nu0 is None else float(nu0)
+
+        niw = NIWPrior(
+            m0=m0a,
+            v0=np.eye(k, dtype=float),
+            s0=s0a,
+            nu0=nu0a,
+        )
+        spec = DLSpec(abeta=float(abeta), dl_scaler=float(dl_scaler))
+        _ = bool(include_intercept)
+        return PriorSpec(family="dl", niw=niw, dl=spec)
 
 
 @dataclass(frozen=True, slots=True)

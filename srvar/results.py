@@ -47,6 +47,8 @@ class FitResult:
     h0_draws: np.ndarray | None = None  # (D, N)
     sigma_eta2_draws: np.ndarray | None = None  # (D, N)
     gamma_draws: np.ndarray | None = None  # (D, K)
+    mu_draws: np.ndarray | None = None  # (D, N)
+    mu_gamma_draws: np.ndarray | None = None  # (D, N)
 
 
 @dataclass(frozen=True, slots=True)

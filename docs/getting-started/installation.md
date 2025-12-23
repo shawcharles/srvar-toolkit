@@ -1,5 +1,30 @@
 # Installation
 
+## Reproducible local environment (recommended)
+
+If you're concerned about cross-platform differences (macOS/Windows/Linux), install into a fresh virtual environment.
+
+```bash
+python -m venv .venv
+
+# Activate (macOS/Linux)
+source .venv/bin/activate
+
+# Activate (Windows PowerShell)
+# .venv\Scripts\Activate.ps1
+
+python -m pip install -U pip
+
+# CLI + YAML + FRED fetch
+python -m pip install -e ".[cli,fred]"
+```
+
+For development (tests + docs + plotting):
+
+```bash
+python -m pip install -e ".[dev,cli,fred,docs,plot]"
+```
+
 ## Install from source
 
 ```bash

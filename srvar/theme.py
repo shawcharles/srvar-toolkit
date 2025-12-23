@@ -218,7 +218,7 @@ class Theme:
 
     >>> custom_theme = Theme(
     ...     palette=Palette(observed="#000000"),
-    ...     typography=Typography(title_size=14.0),
+    ...     typography=Typography(title_size=12.0),
     ... )
     """
 

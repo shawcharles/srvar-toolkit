@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import scipy.stats
 
 
 def gamma_rate(*, shape: float | np.ndarray, rate: float | np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -39,3 +40,60 @@ def inverse_gaussian(*, mu: float | np.ndarray, lam: float | np.ndarray, rng: np
 
     out = np.clip(out, 1e-12, 1e12)
     return out
+
+
+def gig_rvs(
+    *,
+    p: float | np.ndarray,
+    a: float | np.ndarray,
+    b: float | np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Sample from the generalized inverse Gaussian distribution GIG(p, a, b).
+
+    This implementation matches the three-parameter GIG(p, a, b) used in the MATLAB
+    reference code (see ``functions/gigrnd.m``), with density:
+
+        f(x) ∝ x^(p-1) * exp(-(a*x + b/x)/2),  x > 0.
+
+    SciPy exposes a two-parameter form via ``scipy.stats.geninvgauss(p, omega)``,
+    with density:
+
+        f(z) ∝ z^(p-1) * exp(-(omega*z + omega/z)/2),  z > 0,
+
+    which corresponds to the special case GIG(p, omega, omega).
+
+    To sample from GIG(p, a, b), we use the scaling identity:
+
+        Let omega = sqrt(a*b) and Z ~ GIG(p, omega, omega).
+        Then X = sqrt(b/a) * Z ~ GIG(p, a, b).
+
+    Notes
+    -----
+    - The DL prior update step uses GIG draws for both the global scale and the
+      Dirichlet weights; any parameterization mismatch here would materially
+      change the implied shrinkage.
+    """
+    pp = np.asarray(p, dtype=float)
+    aa = np.asarray(a, dtype=float)
+    bb = np.asarray(b, dtype=float)
+
+    if np.any(~np.isfinite(pp)):
+        raise ValueError("p must be finite")
+    if np.any(~np.isfinite(aa)) or np.any(aa <= 0):
+        raise ValueError("a must be finite and > 0")
+    if np.any(~np.isfinite(bb)) or np.any(bb <= 0):
+        raise ValueError("b must be finite and > 0")
+
+    shp = np.broadcast(pp, aa, bb).shape
+    pp_b = np.broadcast_to(pp, shp).reshape(-1)
+    aa_b = np.broadcast_to(aa, shp).reshape(-1)
+    bb_b = np.broadcast_to(bb, shp).reshape(-1)
+
+    out = np.empty(pp_b.shape[0], dtype=float)
+    for i, (pi, ai, bi) in enumerate(zip(pp_b, aa_b, bb_b, strict=True)):
+        omega = float(np.sqrt(ai * bi))
+        z = scipy.stats.geninvgauss(pi, omega).rvs(random_state=rng)
+        out[i] = float((bi / omega) * z)
+
+    return out.reshape(shp)

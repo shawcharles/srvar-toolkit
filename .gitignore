@@ -67,3 +67,6 @@ arXiv-preprint/
 
 # API keys
 .env
+
+.windsurf/
+.windsurfrules

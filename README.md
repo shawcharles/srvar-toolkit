@@ -97,6 +97,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
 | **Stochastic Volatility** | Diagonal log-volatility random-walk (KSC mixture sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
+| **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 | **Backtesting** | Rolling/expanding refit + forecast with evaluation plots + metrics export | `srvar backtest config.yml` | Supported |
@@ -112,6 +113,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 - **SSVS**: stochastic search variable selection (spike-and-slab variable selection)
 - **SVRW**: stochastic volatility random walk (diagonal log-variance random-walk model)
 - **KSC**: Kim-Shephard-Chib mixture approximation for log-\(\chi^2\)
+- **SSP**: steady-state parameterization (replace intercept with long-run mean `mu`)
 
 ---
 
@@ -122,6 +124,31 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 
 - Python 3.11 or higher
 - pip package manager
+
+### Reproducible local environment (recommended)
+
+If you're concerned about cross-platform differences (macOS/Windows/Linux), installing into a fresh virtual environment is the most reliable workflow.
+
+```bash
+python -m venv .venv
+
+# Activate (macOS/Linux)
+source .venv/bin/activate
+
+# Activate (Windows PowerShell)
+# .venv\Scripts\Activate.ps1
+
+python -m pip install -U pip
+
+# Install from this repo (CLI + FRED fetch)
+python -m pip install -e ".[cli,fred]"
+```
+
+For development (tests + docs + plotting):
+
+```bash
+python -m pip install -e ".[dev,cli,fred,docs,plot]"
+```
 
 ### Installation
 
@@ -148,6 +175,16 @@ pip install -e '.[dev]'
 # All extras
 pip install -e '.[dev,plot,fred,docs]'
 ```
+
+Note: `srvar fetch-fred` requires the optional `fred` extra (it depends on `fredapi`).
+
+If you see a warning like `srvar-toolkit ... does not provide the extra 'fred'`, you are likely installing a different distribution than this repository. From the repository root, prefer:
+
+```bash
+python -m pip install -e ".[fred]"
+```
+
+You will also need a FRED API key (set `FRED_API_KEY` in your environment).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -181,6 +218,38 @@ sampler = SamplerConfig(draws=500, burn_in=100, thin=1)
 fit_res = fit(ds, model, prior, sampler)
 fc = forecast(fit_res, horizons=[1, 4], draws=200)
 print(fc.mean)
+```
+
+### Steady-State VAR (SSP)
+
+SSP replaces the explicit intercept with a steady-state mean vector `mu`.
+
+```python
+import numpy as np
+from srvar.api import fit, forecast
+from srvar.spec import ModelSpec, PriorSpec, SamplerConfig, SteadyStateSpec
+
+model = ModelSpec(
+    p=2,
+    include_intercept=True,
+    steady_state=SteadyStateSpec(mu0=np.array([0.0, 0.0]), v0_mu=0.1),
+)
+```
+
+YAML (CLI) example:
+
+```yaml
+model:
+  p: 2
+  include_intercept: true
+  steady_state:
+    mu0: [0.02, 0.03]
+    v0_mu: 0.01
+    ssvs:
+      enabled: false
+      spike_var: 0.0001
+      slab_var: 0.01
+      inclusion_prob: 0.5
 ```
 
 ### Shadow-Rate Model with Stochastic Volatility
@@ -224,6 +293,10 @@ fig.savefig("volatility.png", dpi=150, bbox_inches="tight")
 ```
 
 _For more examples, see the [`examples/README.md`](examples/README.md)._
+
+SSP example:
+
+- `examples/ssp_fit_forecast.py`
 
 ### CLI + YAML (config-driven runs)
 

@@ -16,7 +16,7 @@ from .data.dataset import Dataset
 from .elb import ElbSpec
 from .metrics import crps_draws, mae, rmse
 from .results import FitResult, ForecastResult
-from .spec import ModelSpec, PriorSpec, SamplerConfig
+from .spec import ModelSpec, MuSSVSSpec, PriorSpec, SamplerConfig, SteadyStateSpec
 from .sv import VolatilitySpec
 
 
@@ -59,7 +59,7 @@ def _prepare_from_config(
             },
         )
 
-    model = build_model(cfg)
+    model = build_model(cfg, dataset=ds)
     if emit is not None:
         emit(
             "summary",
@@ -67,6 +67,7 @@ def _prepare_from_config(
                 "kind": "model",
                 "p": model.p,
                 "include_intercept": model.include_intercept,
+                "steady_state": bool(model.steady_state is not None),
                 "elb": bool(model.elb is not None and model.elb.enabled),
                 "sv": bool(model.volatility is not None and model.volatility.enabled),
             },
@@ -216,7 +217,7 @@ def load_dataset_from_csv(cfg: dict[str, Any]) -> Dataset:
     return Dataset.from_arrays(values=values, variables=variables, time_index=x.index)
 
 
-def build_model(cfg: dict[str, Any]) -> ModelSpec:
+def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
     model_cfg = _get(cfg, "model", required=True)
     if not isinstance(model_cfg, dict):
         raise ConfigError("model must be a mapping")
@@ -265,7 +266,76 @@ def build_model(cfg: dict[str, Any]) -> ModelSpec:
                 ),
             )
 
-    return ModelSpec(p=p, include_intercept=include_intercept, elb=elb_spec, volatility=vol_spec)
+    ss_spec: SteadyStateSpec | None = None
+    ss_cfg = _get(model_cfg, "steady_state", default=None)
+    if ss_cfg is not None:
+        if not isinstance(ss_cfg, dict):
+            raise ConfigError("model.steady_state must be a mapping")
+
+        ss_enabled = _as_bool(_get(ss_cfg, "enabled", default=True), key="model.steady_state.enabled")
+        if ss_enabled:
+            mu0_raw = _get(ss_cfg, "mu0", required=True)
+            if not isinstance(mu0_raw, list) or not all(
+                isinstance(v, (float, int, np.floating, np.integer)) and not isinstance(v, bool) for v in mu0_raw
+            ):
+                raise ConfigError("model.steady_state.mu0 must be a list of numbers")
+            mu0 = np.asarray([float(v) for v in mu0_raw], dtype=float)
+            if mu0.shape != (dataset.N,):
+                raise ConfigError("model.steady_state.mu0 must have length N")
+
+            v0_mu_raw = _get(ss_cfg, "v0_mu", required=True)
+            if isinstance(v0_mu_raw, list):
+                if not all(
+                    isinstance(v, (float, int, np.floating, np.integer)) and not isinstance(v, bool) for v in v0_mu_raw
+                ):
+                    raise ConfigError("model.steady_state.v0_mu must be a number or list of numbers")
+                v0_mu: float | np.ndarray = np.asarray([float(v) for v in v0_mu_raw], dtype=float)
+            else:
+                v0_mu = _as_float(v0_mu_raw, key="model.steady_state.v0_mu")
+
+            mu_ssvs_spec: MuSSVSSpec | None = None
+            mu_ssvs_cfg = _get(ss_cfg, "ssvs", default=None)
+            if mu_ssvs_cfg is not None:
+                if not isinstance(mu_ssvs_cfg, dict):
+                    raise ConfigError("model.steady_state.ssvs must be a mapping")
+                mu_ssvs_enabled = _as_bool(
+                    _get(mu_ssvs_cfg, "enabled", default=True),
+                    key="model.steady_state.ssvs.enabled",
+                )
+                if mu_ssvs_enabled:
+                    spike_var = _as_float(
+                        _get(mu_ssvs_cfg, "spike_var", default=1e-4),
+                        key="model.steady_state.ssvs.spike_var",
+                    )
+                    slab_var = _as_float(
+                        _get(mu_ssvs_cfg, "slab_var", default=100.0),
+                        key="model.steady_state.ssvs.slab_var",
+                    )
+                    inclusion_prob = _as_float(
+                        _get(mu_ssvs_cfg, "inclusion_prob", default=0.5),
+                        key="model.steady_state.ssvs.inclusion_prob",
+                    )
+                    try:
+                        mu_ssvs_spec = MuSSVSSpec(
+                            spike_var=float(spike_var),
+                            slab_var=float(slab_var),
+                            inclusion_prob=float(inclusion_prob),
+                        )
+                    except ValueError as e:
+                        raise ConfigError(str(e)) from e
+
+            try:
+                ss_spec = SteadyStateSpec(mu0=mu0, v0_mu=v0_mu, ssvs=mu_ssvs_spec)
+            except ValueError as e:
+                raise ConfigError(str(e)) from e
+
+    return ModelSpec(
+        p=p,
+        include_intercept=include_intercept,
+        steady_state=ss_spec,
+        elb=elb_spec,
+        volatility=vol_spec,
+    )
 
 
 def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> PriorSpec:
@@ -340,7 +410,19 @@ def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> P
 
         return PriorSpec.from_blasso(k=k, n=dataset.N, include_intercept=model.include_intercept, **kwargs3)
 
-    raise ConfigError("prior.family must be one of: niw, ssvs, blasso")
+    if family_l == "dl":
+        hyp = _get(prior_cfg, "dl", default={})
+        if not isinstance(hyp, dict):
+            raise ConfigError("prior.dl must be a mapping")
+
+        kwargs4: dict[str, Any] = {}
+        for name in ["abeta", "dl_scaler"]:
+            if name in hyp:
+                kwargs4[name] = hyp[name]
+
+        return PriorSpec.from_dl(k=k, n=dataset.N, include_intercept=model.include_intercept, **kwargs4)
+
+    raise ConfigError("prior.family must be one of: niw, ssvs, blasso, dl")
 
 
 def build_sampler(cfg: dict[str, Any]) -> tuple[SamplerConfig, np.random.Generator]:

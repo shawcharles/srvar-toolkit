@@ -49,9 +49,11 @@ srvar fetch-fred config/fetch_fred_demo_config.yaml
 # Preview the planned fetch/output (no network calls)
 srvar fetch-fred config/fetch_fred_demo_config.yaml --dry-run
 
-# Preflight-check series IDs exist (network call)
+# Preflight-check that series IDs exist (network call)
 srvar fetch-fred config/fetch_fred_demo_config.yaml --validate-series
 ```
+
+Note: `srvar fetch-fred` requires installing the optional `fred` extra (it depends on `fredapi`) and setting a FRED API key (by default via `FRED_API_KEY`).
 
 ### What gets written
 

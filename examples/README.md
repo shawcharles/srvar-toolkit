@@ -14,6 +14,7 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 6. `elb_sv_fit_forecast.py`
 7. `elb_sv_fit_forecast_plots.py`
 8. `blasso.py`
+9. `dl_fit_forecast.py`
 
 ## Scripts
 
@@ -43,3 +44,6 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 
 - `blasso.py`
   Fits a Bayesian LASSO (BLASSO) VAR with both global and adaptive shrinkage, and prints basic coefficient summaries.
+
+- `dl_fit_forecast.py`
+  Loads `examples/data/example.csv`, fits a Dirichlet–Laplace (DL) shrinkage VAR, and produces a small posterior predictive forecast.
