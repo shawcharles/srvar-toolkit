@@ -444,16 +444,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-<!-- CONTACT -->
-## Contact
 
-**Charles Shaw** — charles@charlesshaw.net
-
-Project Link: [https://github.com/shawcharles/srvar-toolkit](https://github.com/shawcharles/srvar-toolkit)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
 
 <!-- CITING -->
 ## Citing
