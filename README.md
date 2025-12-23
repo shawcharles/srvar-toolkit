@@ -378,7 +378,7 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - [x] Forecasting with fan charts
 - [x] Plotting utilities
 - [x] Bayesian LASSO prior
-- [ ] Steady-state VAR parameterisation
+- [x] Steady-state VAR parameterisation
 - [ ] Dirichlet-Laplace prior
 - [ ] Full-covariance stochastic volatility
 - [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
