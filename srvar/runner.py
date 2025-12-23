@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +14,7 @@ import pandas as pd
 from .api import fit, forecast
 from .data.dataset import Dataset
 from .elb import ElbSpec
+from .metrics import crps_draws, mae, rmse
 from .results import FitResult, ForecastResult
 from .spec import ModelSpec, PriorSpec, SamplerConfig
 from .sv import VolatilitySpec
@@ -386,8 +389,126 @@ def build_forecast_config(cfg: dict[str, Any]) -> dict[str, Any] | None:
     return {"horizons": horizons_i, "draws": draws, "quantile_levels": qf}
 
 
+def build_backtest_config(cfg: dict[str, Any], *, model: ModelSpec) -> dict[str, Any]:
+    bt_cfg = _get(cfg, "backtest", required=True)
+    if not isinstance(bt_cfg, dict):
+        raise ConfigError("backtest must be a mapping")
+
+    mode = _get(bt_cfg, "mode", default=None)
+    if mode is not None and (not isinstance(mode, str) or not mode):
+        raise ConfigError("backtest.mode must be a non-empty string when provided")
+    mode_l = (mode or "expanding").lower()
+    if mode_l not in {"expanding", "rolling"}:
+        raise ConfigError("backtest.mode must be one of: expanding, rolling")
+
+    window = _get(bt_cfg, "window", default=None)
+    if window is None:
+        window_i: int | None = None
+    else:
+        window_i = _as_int(window, key="backtest.window", min_value=1)
+
+    if mode_l == "rolling" and window_i is None:
+        raise ConfigError("backtest.window is required when backtest.mode='rolling'")
+    if mode_l == "expanding" and window_i is not None:
+        raise ConfigError("backtest.window must be null/omitted when backtest.mode='expanding'")
+
+    min_obs = _as_int(_get(bt_cfg, "min_obs", default=max(20, model.p + 1)), key="backtest.min_obs", min_value=1)
+    if min_obs < model.p + 1:
+        raise ConfigError("backtest.min_obs must be >= model.p + 1")
+
+    if window_i is not None and window_i < min_obs:
+        raise ConfigError("backtest.window must be >= backtest.min_obs")
+
+    step = _as_int(_get(bt_cfg, "step", default=1), key="backtest.step", min_value=1)
+
+    horizons = _get(bt_cfg, "horizons", required=True)
+    if not isinstance(horizons, list) or not all(isinstance(v, (int, np.integer)) for v in horizons):
+        raise ConfigError("backtest.horizons must be a list[int]")
+    horizons_i = [int(v) for v in horizons]
+    if not horizons_i or any(h < 1 for h in horizons_i):
+        raise ConfigError("backtest.horizons must contain positive integers")
+
+    draws = _as_int(_get(bt_cfg, "draws", default=500), key="backtest.draws", min_value=1)
+
+    q = _get(bt_cfg, "quantile_levels", default=[0.1, 0.5, 0.9])
+    if not isinstance(q, list) or not all(isinstance(v, (float, int, np.floating, np.integer)) for v in q):
+        raise ConfigError("backtest.quantile_levels must be a list[float]")
+    qf = [float(v) for v in q]
+
+    return {
+        "mode": mode_l,
+        "window": window_i,
+        "min_obs": min_obs,
+        "step": step,
+        "horizons": horizons_i,
+        "draws": draws,
+        "quantile_levels": qf,
+    }
+
+
+def build_evaluation_config(cfg: dict[str, Any], *, variables: list[str], horizons: list[int]) -> dict[str, Any]:
+    ev_cfg = _get(cfg, "evaluation", default={})
+    if not isinstance(ev_cfg, dict):
+        raise ConfigError("evaluation must be a mapping")
+
+    cov_cfg = _get(ev_cfg, "coverage", default={})
+    if not isinstance(cov_cfg, dict):
+        raise ConfigError("evaluation.coverage must be a mapping")
+    cov_enabled = _as_bool(_get(cov_cfg, "enabled", default=True), key="evaluation.coverage.enabled")
+    cov_intervals = _get(cov_cfg, "intervals", default=[0.5, 0.8, 0.9])
+    if not isinstance(cov_intervals, list) or not all(isinstance(v, (float, int, np.floating, np.integer)) for v in cov_intervals):
+        raise ConfigError("evaluation.coverage.intervals must be a list[float]")
+    cov_intervals_f = [float(v) for v in cov_intervals]
+    cov_use_latent = _as_bool(_get(cov_cfg, "use_latent", default=False), key="evaluation.coverage.use_latent")
+
+    pit_cfg = _get(ev_cfg, "pit", default={})
+    if not isinstance(pit_cfg, dict):
+        raise ConfigError("evaluation.pit must be a mapping")
+    pit_enabled = _as_bool(_get(pit_cfg, "enabled", default=False), key="evaluation.pit.enabled")
+    pit_bins = _as_int(_get(pit_cfg, "bins", default=10), key="evaluation.pit.bins", min_value=2)
+    pit_use_latent = _as_bool(_get(pit_cfg, "use_latent", default=False), key="evaluation.pit.use_latent")
+    pit_vars = _get(pit_cfg, "variables", default=[variables[0]] if variables else [])
+    if not isinstance(pit_vars, list) or not all(isinstance(v, str) for v in pit_vars):
+        raise ConfigError("evaluation.pit.variables must be a list[str]")
+    for v in pit_vars:
+        if v not in variables:
+            raise ConfigError(f"evaluation.pit.variables contains unknown variable: {v}")
+    pit_h = _get(pit_cfg, "horizons", default=[1])
+    if not isinstance(pit_h, list) or not all(isinstance(v, (int, np.integer)) for v in pit_h):
+        raise ConfigError("evaluation.pit.horizons must be a list[int]")
+    pit_h_i = [int(v) for v in pit_h]
+    for h in pit_h_i:
+        if h not in horizons:
+            raise ConfigError(f"evaluation.pit.horizons contains horizon not in backtest.horizons: {h}")
+
+    crps_cfg = _get(ev_cfg, "crps", default={})
+    if not isinstance(crps_cfg, dict):
+        raise ConfigError("evaluation.crps must be a mapping")
+    crps_enabled = _as_bool(_get(crps_cfg, "enabled", default=True), key="evaluation.crps.enabled")
+    crps_use_latent = _as_bool(_get(crps_cfg, "use_latent", default=False), key="evaluation.crps.use_latent")
+
+    metrics_table = _as_bool(_get(ev_cfg, "metrics_table", default=True), key="evaluation.metrics_table")
+
+    return {
+        "coverage": {"enabled": cov_enabled, "intervals": cov_intervals_f, "use_latent": cov_use_latent},
+        "pit": {
+            "enabled": pit_enabled,
+            "bins": pit_bins,
+            "variables": list(pit_vars),
+            "horizons": pit_h_i,
+            "use_latent": pit_use_latent,
+        },
+        "crps": {"enabled": crps_enabled, "use_latent": crps_use_latent},
+        "metrics_table": metrics_table,
+    }
+
+
 def validate_config(cfg: dict[str, Any]) -> None:
-    _prepare_from_config(cfg, emit=None)
+    ds, model, _prior, _sampler, _rng, _fc_cfg = _prepare_from_config(cfg, emit=None)
+
+    if "backtest" in cfg:
+        bt = build_backtest_config(cfg, model=model)
+        build_evaluation_config(cfg, variables=list(ds.variables), horizons=list(bt["horizons"]))
 
 
 def _save_fit_npz(path: Path, fit_res: FitResult) -> None:
@@ -560,3 +681,264 @@ def run_from_config(
     emit("stage_end", {"name": "write_artifacts", "elapsed_s": time.perf_counter() - t0_write})
     emit("run_end", {"elapsed_s": time.perf_counter() - t0_total})
     return RunArtifacts(fit_result=fit_res, forecast_result=fc_res)
+
+
+def backtest_from_config(
+    config_path: str | Path,
+    *,
+    out_dir: str | Path | None = None,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+) -> None:
+    t0_total = time.perf_counter()
+
+    def emit(event: str, payload: dict[str, Any]) -> None:
+        if progress is not None:
+            progress(event, payload)
+
+    emit("stage_start", {"name": "load_config"})
+    t0 = time.perf_counter()
+    cfg = load_config(config_path)
+    emit("stage_end", {"name": "load_config", "elapsed_s": time.perf_counter() - t0})
+
+    emit("stage_start", {"name": "validate_config"})
+    t0 = time.perf_counter()
+    ds_full, model, _prior0, sampler, rng, _fc_cfg = _prepare_from_config(cfg, emit=emit)
+    emit("stage_end", {"name": "validate_config", "elapsed_s": time.perf_counter() - t0})
+
+    bt = build_backtest_config(cfg, model=model)
+    ev = build_evaluation_config(cfg, variables=list(ds_full.variables), horizons=list(bt["horizons"]))
+
+    output_cfg = _get(cfg, "output", default={})
+    if not isinstance(output_cfg, dict):
+        raise ConfigError("output must be a mapping")
+    save_plots = bool(_get(output_cfg, "save_plots", default=True))
+    save_forecasts = bool(_get(output_cfg, "save_forecasts", default=False))
+
+    emit("stage_start", {"name": "prepare_output"})
+    t0 = time.perf_counter()
+    out = Path(out_dir) if out_dir is not None else Path(_get(output_cfg, "out_dir", default="outputs/backtest"))
+    out.mkdir(parents=True, exist_ok=True)
+    emit(
+        "summary",
+        {
+            "kind": "output",
+            "out_dir": str(out),
+            "save_fit": False,
+            "save_forecast": False,
+            "save_plots": bool(save_plots),
+            "save_forecasts": bool(save_forecasts),
+        },
+    )
+    emit("stage_end", {"name": "prepare_output", "elapsed_s": time.perf_counter() - t0})
+
+    emit("stage_start", {"name": "write_artifacts"})
+    t0_write = time.perf_counter()
+
+    cfg_out = Path(out / "config.yml")
+    cfg_out.write_text(Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
+    emit("artifact", {"path": str(cfg_out), "bytes": int(cfg_out.stat().st_size), "kind": "config"})
+
+    mode = str(bt["mode"])
+    window_i = bt["window"]
+    min_obs = int(bt["min_obs"])
+    step = int(bt["step"])
+    horizons = list(bt["horizons"])
+    max_h = int(max(horizons))
+    pred_draws = int(bt["draws"])
+    q_levels = list(bt["quantile_levels"])
+
+    if ds_full.T <= max_h:
+        raise ConfigError("dataset is too short for requested backtest horizons")
+
+    first_origin_end = min_obs - 1
+    last_origin_end = ds_full.T - max_h - 1
+    if last_origin_end < first_origin_end:
+        raise ConfigError("backtest settings imply zero feasible forecast origins")
+
+    origins = list(range(first_origin_end, last_origin_end + 1, step))
+    k_orig = int(len(origins))
+    n = int(ds_full.N)
+
+    y_true = np.full((k_orig, max_h, n), np.nan, dtype=float)
+    forecasts: list[ForecastResult] = []
+
+    emit(
+        "summary",
+        {
+            "kind": "backtest",
+            "mode": mode,
+            "window": window_i,
+            "min_obs": min_obs,
+            "step": step,
+            "horizons": horizons,
+            "origins": k_orig,
+            "draws": pred_draws,
+        },
+    )
+
+    fc_dir = out / "forecasts"
+    if save_forecasts:
+        fc_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, origin_end in enumerate(origins):
+        t0_origin = time.perf_counter()
+
+        if mode == "expanding":
+            train_start = 0
+        else:
+            assert window_i is not None
+            train_start = max(0, int(origin_end - window_i + 1))
+        train_end_excl = int(origin_end + 1)
+
+        train_values = ds_full.values[train_start:train_end_excl, :]
+        train_index = ds_full.time_index[train_start:train_end_excl]
+        train_ds = Dataset.from_arrays(values=train_values, variables=ds_full.variables, time_index=train_index)
+
+        prior_i = build_prior(cfg, dataset=train_ds, model=model)
+        fit_res = fit(train_ds, model, prior_i, sampler, rng=rng)
+        fc_res = forecast(
+            fit_res,
+            horizons=horizons,
+            draws=pred_draws,
+            quantile_levels=q_levels,
+            rng=rng,
+        )
+        forecasts.append(fc_res)
+
+        y_true[i, :, :] = ds_full.values[origin_end + 1 : origin_end + 1 + max_h, :]
+
+        if save_forecasts:
+            p = fc_dir / f"origin_{origin_end:04d}.npz"
+            _save_forecast_npz(p, fc_res)
+            emit("artifact", {"path": str(p), "bytes": int(p.stat().st_size), "kind": "forecast"})
+
+        emit(
+            "backtest_origin",
+            {
+                "i": i,
+                "k": k_orig,
+                "origin_end": int(origin_end),
+                "train_start": int(train_start),
+                "train_T": int(train_ds.T),
+                "elapsed_s": time.perf_counter() - t0_origin,
+            },
+        )
+
+    intervals = list(ev["coverage"]["intervals"])
+
+    metrics_path = out / "metrics.csv"
+    if bool(ev["metrics_table"]):
+        rows: list[dict[str, Any]] = []
+        for j, vname in enumerate(ds_full.variables):
+            for h in range(1, max_h + 1):
+                y = y_true[:, h - 1, j]
+                mu = np.asarray([fc.mean[h - 1, j] for fc in forecasts], dtype=float)
+                e = mu - y
+
+                sims_list = [
+                    (fc.latent_draws if (bool(ev["crps"]["use_latent"]) and fc.latent_draws is not None) else fc.draws)[:, h - 1, j]
+                    for fc in forecasts
+                ]
+                crps_vals = np.asarray([float("nan") if np.isnan(y[i2]) else float(crps_draws(y[i2], sims_list[i2])) for i2 in range(k_orig)], dtype=float)
+
+                row: dict[str, Any] = {
+                    "variable": vname,
+                    "horizon": h,
+                    "crps": float(np.nanmean(crps_vals)),
+                    "rmse": float(rmse(e, axis=0)),
+                    "mae": float(mae(e, axis=0)),
+                }
+
+                for c in intervals:
+                    qlo = 0.5 - 0.5 * float(c)
+                    qhi = 0.5 + 0.5 * float(c)
+                    hit = np.empty(k_orig, dtype=float)
+                    for i2, fc in enumerate(forecasts):
+                        sims = fc.latent_draws if (bool(ev["coverage"]["use_latent"]) and fc.latent_draws is not None) else fc.draws
+                        lo = float(np.quantile(sims[:, h - 1, j], q=qlo))
+                        hi = float(np.quantile(sims[:, h - 1, j], q=qhi))
+                        yi = float(y_true[i2, h - 1, j])
+                        hit[i2] = float(lo <= yi <= hi)
+                    row[f"coverage_{int(round(100 * float(c)))}"] = float(np.nanmean(hit))
+                rows.append(row)
+
+        with metrics_path.open("w", newline="", encoding="utf-8") as f:
+            fieldnames = list(rows[0].keys()) if rows else ["variable", "horizon", "crps", "rmse", "mae"]
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            for r in rows:
+                w.writerow(r)
+        emit("artifact", {"path": str(metrics_path), "bytes": int(metrics_path.stat().st_size), "kind": "table"})
+
+    if save_plots:
+        from .plotting import plot_crps_by_horizon, plot_forecast_coverage, plot_pit_histogram
+
+        cov_all = out / "coverage_all.png"
+        fig, _ax = plot_forecast_coverage(
+            forecasts,
+            y_true,
+            intervals=intervals,
+            horizons=horizons,
+            var=None,
+            use_latent=bool(ev["coverage"]["use_latent"]),
+        )
+        fig.savefig(cov_all, dpi=200, bbox_inches="tight")
+        emit("artifact", {"path": str(cov_all), "bytes": int(cov_all.stat().st_size), "kind": "plot"})
+
+        for vname in ds_full.variables:
+            p_cov = out / f"coverage_{vname}.png"
+            fig, _ax = plot_forecast_coverage(
+                forecasts,
+                y_true,
+                intervals=intervals,
+                horizons=horizons,
+                var=vname,
+                use_latent=bool(ev["coverage"]["use_latent"]),
+            )
+            fig.savefig(p_cov, dpi=200, bbox_inches="tight")
+            emit("artifact", {"path": str(p_cov), "bytes": int(p_cov.stat().st_size), "kind": "plot"})
+
+        if bool(ev["crps"]["enabled"]):
+            crps_all = out / "crps_by_horizon.png"
+            fig, _ax = plot_crps_by_horizon(
+                forecasts,
+                y_true,
+                horizons=horizons,
+                var=None,
+                use_latent=bool(ev["crps"]["use_latent"]),
+            )
+            fig.savefig(crps_all, dpi=200, bbox_inches="tight")
+            emit("artifact", {"path": str(crps_all), "bytes": int(crps_all.stat().st_size), "kind": "plot"})
+
+        if bool(ev["pit"]["enabled"]):
+            for vname in list(ev["pit"]["variables"]):
+                for h in list(ev["pit"]["horizons"]):
+                    p_pit = out / f"pit_{vname}_h{int(h)}.png"
+                    fig, _ax = plot_pit_histogram(
+                        forecasts,
+                        y_true,
+                        var=str(vname),
+                        horizon=int(h),
+                        bins=int(ev["pit"]["bins"]),
+                        use_latent=bool(ev["pit"]["use_latent"]),
+                    )
+                    fig.savefig(p_pit, dpi=200, bbox_inches="tight")
+                    emit("artifact", {"path": str(p_pit), "bytes": int(p_pit.stat().st_size), "kind": "plot"})
+
+    summary = {
+        "mode": mode,
+        "window": window_i,
+        "min_obs": min_obs,
+        "step": step,
+        "horizons": horizons,
+        "origins": k_orig,
+        "dataset_T": int(ds_full.T),
+        "dataset_N": int(ds_full.N),
+        "elapsed_s": float(time.perf_counter() - t0_total),
+    }
+    summary_path = out / "backtest_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    emit("artifact", {"path": str(summary_path), "bytes": int(summary_path.stat().st_size), "kind": "meta"})
+
+    emit("stage_end", {"name": "write_artifacts", "elapsed_s": time.perf_counter() - t0_write})
+    emit("backtest_end", {"elapsed_s": time.perf_counter() - t0_total})

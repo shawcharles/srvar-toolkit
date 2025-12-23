@@ -1,0 +1,153 @@
+# srvar-toolkit backtest demo configuration
+ #
+ # Run:
+ #   srvar validate config/backtest_demo_config.yaml
+ #   srvar backtest config/backtest_demo_config.yaml
+ #
+ # Outputs are written to output.out_dir (see bottom of this file).
+ #
+ # Notes:
+ # - This is a small, fast config intended for smoke-testing the backtest pipeline.
+ # - Increase sampler/backtest draws and horizons for real research runs.
+
+ data:
+   # Path to a CSV containing a date column and numeric variable columns.
+   csv_path: "examples/data/example.csv"
+
+   # Column name containing observation dates (parsed to a pandas.DatetimeIndex).
+   date_column: "date"
+
+   # Ordered list of endogenous variables (must be columns in the CSV).
+   # Order matters: it defines the VAR ordering.
+   variables: ["r", "y"]
+
+   # Drop rows with any missing values in the selected variables.
+   dropna: true
+
+ model:
+   # VAR lag order (p). Must be >= 1.
+   p: 4
+
+   # Include an intercept term in the design matrix.
+   include_intercept: true
+
+   # Effective Lower Bound (ELB) / shadow-rate augmentation.
+   # If enabled, variables in applies_to are treated as censored at "bound".
+   elb:
+     enabled: true
+     bound: -0.05
+     applies_to: ["r"]
+
+     # Tolerance for deciding whether an observation is "at the bound".
+     tol: 1.0e-8
+
+   # Diagonal stochastic volatility random walk (SVRW).
+   volatility:
+     enabled: true
+
+     # Small epsilon used in log(e^2 + epsilon) style stabilization.
+     epsilon: 1.0e-4
+
+     # Priors for initial log-volatility and innovation variance.
+     h0_prior_mean: 1.0e-6
+     h0_prior_var: 10.0
+     sigma_eta_prior_nu0: 1.0
+     sigma_eta_prior_s0: 0.01
+
+ prior:
+   # Prior family.
+   # - "niw"   : conjugate normal-inverse-Wishart (fast; standard BVAR)
+   # - "ssvs"  : spike-and-slab variable selection
+   # - "blasso": Bayesian Lasso
+   family: "niw"
+
+   # For NIW, method can be:
+   # - "default"
+   # - "minnesota" (recommended)
+   method: "minnesota"
+
+   # Minnesota hyperparameters (optional; shown here explicitly).
+   minnesota:
+     lambda1: 0.1
+     lambda2: 0.5
+     lambda3: 1.0
+     lambda4: 100.0
+
+ sampler:
+   # MCMC settings used for each model re-fit at each backtest origin.
+   # IMPORTANT: backtesting refits many times, so keep these small for quick runs.
+   draws: 400
+   burn_in: 100
+   thin: 2
+
+   # Seed for reproducibility.
+   seed: 42
+
+ backtest:
+   # Backtest mode:
+   # - expanding: estimation sample grows over time (common in macro)
+   # - rolling:   fixed window length slides forward (requires backtest.window)
+   mode: expanding
+
+   # Minimum number of observations in the estimation sample at the first origin.
+   # Must be >= model.p + 1.
+   min_obs: 12
+
+   # Advance the forecast origin by this many time steps each iteration.
+   step: 1
+
+   # Forecast horizons to evaluate.
+   # NOTE: internally the engine simulates to max(horizons).
+   horizons: [1, 4]
+
+   # Predictive simulation draws per origin (for the forecast distribution).
+   draws: 400
+
+   # Quantiles computed from predictive draws and written into metrics/plots.
+   quantile_levels: [0.1, 0.5, 0.9]
+
+ evaluation:
+   # Forecast evaluation settings.
+   # These control which plots/metrics are generated after the backtest loop.
+
+   coverage:
+     # Empirical coverage of prediction intervals by horizon.
+     enabled: true
+
+     # Interval widths (e.g., 0.8 = 80% interval).
+     intervals: [0.5, 0.8, 0.9]
+
+     # If ELB is enabled, you can choose to evaluate on latent (shadow) draws.
+     # Usually you want observed draws (use_latent=false).
+     use_latent: false
+
+   pit:
+     # PIT histograms for calibration diagnostics.
+     enabled: true
+     bins: 10
+
+     # Variables/horizons to plot PIT for (keep small; one plot per var-horizon).
+     variables: ["r"]
+     horizons: [1, 4]
+
+     # Use latent draws if you want PIT for shadow-rate rather than floored observed.
+     use_latent: false
+
+   crps:
+     # Continuous Ranked Probability Score computed from predictive draws.
+     enabled: true
+     use_latent: false
+
+   # If true, write metrics.csv (CRPS/RMSE/MAE + coverage columns).
+   metrics_table: true
+
+ output:
+   # Output directory for all artifacts.
+   out_dir: "outputs/demo_backtest"
+
+   # Save PNG plots (requires matplotlib).
+   save_plots: true
+
+   # Save per-origin forecast draws to outputs/forecasts/*.npz.
+   # This can be large for real runs.
+   save_forecasts: false

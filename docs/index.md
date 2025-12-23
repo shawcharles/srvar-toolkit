@@ -88,6 +88,7 @@ getting-started/quickstart
 user-guide/concepts
 user-guide/glossary
 user-guide/configuration
+user-guide/backtesting
 user-guide/limitations
 FAQ
 ```

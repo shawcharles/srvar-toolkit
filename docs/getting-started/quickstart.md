@@ -39,6 +39,9 @@ srvar run config/demo_config.yaml
 
 # Override output directory
 srvar run config/demo_config.yaml --out outputs/my_run
+
+# Backtesting (refit + forecast over multiple origins)
+srvar backtest config/backtest_demo_config.yaml
 ```
 
 ### What gets written
@@ -49,6 +52,14 @@ The run writes outputs to `output.out_dir` (or the `--out` override), for exampl
 - `fit_result.npz`
 - `forecast_result.npz` (if forecasting enabled)
 - `shadow_rate_*.png`, `volatility_*.png`, `forecast_fan_*.png` (if plot saving enabled)
+
+The backtest writes additional evaluation artifacts (when enabled in the config):
+
+- `metrics.csv`
+- `coverage_all.png`, `coverage_<var>.png`
+- `pit_<var>_h<h>.png`
+- `crps_by_horizon.png`
+- `backtest_summary.json`
 
 ### Useful flags
 

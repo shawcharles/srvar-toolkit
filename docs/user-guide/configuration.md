@@ -18,6 +18,9 @@ In addition to the Python API, the CLI supports running a full fit/forecast/plot
 ```bash
 srvar validate config/demo_config.yaml
 srvar run config/demo_config.yaml
+
+# Backtesting (rolling/expanding refit + forecast)
+srvar backtest config/backtest_demo_config.yaml
 ```
 
 ### Where to start
@@ -34,6 +37,8 @@ The top-level keys map directly to the core Python objects:
 - `prior`: `PriorSpec` (e.g. NIW defaults or Minnesota-style)
 - `sampler`: `SamplerConfig` (draws/burn-in/thin/seed)
 - `forecast` (optional): forecast horizons/draws/quantiles
+- `backtest` (optional): rolling/expanding refit settings and forecast horizons
+- `evaluation` (optional): backtest evaluation settings (coverage/PIT/CRPS + metrics export)
 - `output`: output directory and which artifacts to save
 - `plots` (optional): which variables to plot and quantile bands
 
@@ -45,6 +50,20 @@ When you run `srvar run`, the toolkit writes outputs into `output.out_dir` (or `
 - `fit_result.npz` (posterior draws)
 - `forecast_result.npz` (if forecasting enabled)
 - `shadow_rate_*.png`, `volatility_*.png`, `forecast_fan_*.png` (if plot saving enabled)
+
+When you run `srvar backtest`, the toolkit writes outputs into `output.out_dir` (or `--out`):
+
+- `config.yml` (exact config used)
+- `metrics.csv` (CRPS/RMSE/MAE + coverage columns)
+- `coverage_all.png`, `coverage_<var>.png` (coverage by horizon)
+- `pit_<var>_h<h>.png` (PIT histograms for selected variables/horizons)
+- `crps_by_horizon.png`
+- `backtest_summary.json`
+
+The backtest config is intentionally CLI-first and is designed to be reproducible:
+
+- **expanding** backtests grow the estimation sample over time.
+- **rolling** backtests use a fixed window length (configure `backtest.window`).
 
 ## Choosing the lag order `p`
 

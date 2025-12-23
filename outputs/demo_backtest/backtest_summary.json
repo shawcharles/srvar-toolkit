@@ -1,0 +1,14 @@
+{
+  "dataset_N": 2,
+  "dataset_T": 24,
+  "elapsed_s": 3.345238241003244,
+  "horizons": [
+    1,
+    4
+  ],
+  "min_obs": 12,
+  "mode": "expanding",
+  "origins": 9,
+  "step": 1,
+  "window": null
+}

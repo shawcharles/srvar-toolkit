@@ -99,6 +99,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
+| **Backtesting** | Rolling/expanding refit + forecast with evaluation plots + metrics export | `srvar backtest config.yml` | Supported |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -237,12 +238,46 @@ srvar run config/demo_config.yaml
 
 # Override output directory
 srvar run config/demo_config.yaml --out outputs/my_run
+
+# Run a rolling/expanding backtest (refit + forecast over multiple origins)
+srvar backtest config/backtest_demo_config.yaml
+
+# Override output directory for backtest
+srvar backtest config/backtest_demo_config.yaml --out outputs/my_backtest
 ```
 
 See:
 
 - `config/demo_config.yaml` (comment-rich template)
 - `config/minimal_config.yaml` (minimal runnable)
+- `config/backtest_demo_config.yaml` (comment-rich backtest template)
+
+#### Backtest config keys (high level)
+
+In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`), backtesting uses:
+
+- `backtest`: refit schedule and forecast horizons
+  - `mode`: `expanding` or `rolling`
+  - `min_obs`: minimum training sample size at first origin
+  - `step`: origin step size
+  - `horizons`: list of horizons to evaluate
+  - `draws`, `quantile_levels`: forecast distribution settings
+- `evaluation`: which metrics/plots to generate
+  - `coverage`: empirical interval coverage by horizon
+  - `pit`: PIT histograms for calibration checks
+  - `crps`: CRPS-by-horizon plot + CRPS in metrics table
+  - `metrics_table`: write `metrics.csv`
+
+#### Backtest artifacts
+
+When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--out`), for example:
+
+- `config.yml`
+- `metrics.csv`
+- `coverage_all.png`, `coverage_<var>.png`
+- `pit_<var>_h<h>.png`
+- `crps_by_horizon.png`
+- `backtest_summary.json`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
