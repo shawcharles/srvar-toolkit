@@ -11,7 +11,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - `srvar fetch-fred` command to fetch FRED series to a cached CSV (config-driven).
 - `--dry-run` flag for `fetch-fred` (prints planned fetch/output without network calls).
 - `--validate-series` flag for `fetch-fred` (preflight series existence check via FRED metadata).
-- Table-2 style transformation support in the fetch pipeline, including `processing.transform_order`.
+- Transformation support in the fetch pipeline, including `processing.transform_order`.
 - Runtime warnings for non-positive values when applying log-based tcodes (4/5/6).
 - Unit tests covering `tcode_1d` and the `fetch_fred` helpers (mocked, no network).
 - Steady-state VAR parameterization (SSP) with Gibbs sampling of the steady-state mean `mu`.
