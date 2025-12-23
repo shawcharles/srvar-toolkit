@@ -67,4 +67,5 @@ The backtest writes additional evaluation artifacts (when enabled in the config)
 - `--no-color`: disable ANSI colors in console output
 - `--verbose`: show more detailed progress output
 
-For more runnable scripts, see [`examples/README.md`](../../examples/README.md).
+For more runnable scripts, see `examples/README.md` in the repository:
+https://github.com/shawcharles/srvar-toolkit/blob/main/examples/README.md
