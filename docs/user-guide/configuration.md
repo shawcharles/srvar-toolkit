@@ -21,12 +21,16 @@ srvar run config/demo_config.yaml
 
 # Backtesting (rolling/expanding refit + forecast)
 srvar backtest config/backtest_demo_config.yaml
+
+# Fetch FRED data to a cached CSV (then use it in `data.csv_path`)
+srvar fetch-fred config/fetch_fred_demo_config.yaml
 ```
 
 ### Where to start
 
 - `config/demo_config.yaml`: comment-rich template
 - `config/minimal_config.yaml`: minimal runnable config
+- `config/fetch_fred_demo_config.yaml`: fetch data from FRED to a cached CSV
 
 ### Schema overview
 

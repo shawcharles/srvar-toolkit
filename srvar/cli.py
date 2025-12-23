@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import sys
 from typing import Any
 
-from .runner import ConfigError, backtest_from_config, run_from_config
+from .runner import ConfigError, backtest_from_config, load_config, run_from_config
+from .data.fetch_fred import fetch_fred_to_csv, plan_fetch_fred, validate_fred_series_ids
 
 from . import __version__
 
@@ -329,6 +331,45 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show more detailed progress output",
     )
+
+    fetch_p = sub.add_parser("fetch-fred", help="Fetch FRED data to a cached CSV (config-driven)")
+    fetch_p.add_argument("config", type=str, help="Path to fetch config.yml")
+    fetch_p.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Override output CSV path",
+    )
+    fetch_p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow overwriting the output CSV if it already exists",
+    )
+    fetch_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be fetched/written (no network calls)",
+    )
+    fetch_p.add_argument(
+        "--validate-series",
+        action="store_true",
+        help="Preflight-check that all FRED series IDs exist (network call)",
+    )
+    fetch_p.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress console output",
+    )
+    fetch_p.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors in console output",
+    )
+    fetch_p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show more detailed progress output",
+    )
     return parser
 
 
@@ -365,7 +406,42 @@ def main(argv: list[str] | None = None) -> int:
 
             backtest_from_config(args.config, out_dir=args.out, progress=reporter)
             return 0
+        if args.command == "fetch-fred":
+            reporter = None
+            if not args.quiet:
+                reporter = _Reporter(color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose))
+                reporter.header(command="srvar fetch-fred", config=str(args.config))
+
+            cfg = load_config(args.config)
+
+            if bool(args.dry_run) and bool(args.validate_series):
+                raise ValueError("--dry-run cannot be combined with --validate-series")
+
+            if bool(args.dry_run):
+                plan = plan_fetch_fred(cfg, out_csv=args.out)
+                if reporter is not None:
+                    print(f"{reporter._b('  dry-run')}: no network calls")
+                print(json.dumps(plan, indent=2, sort_keys=True))
+                return 0
+
+            if bool(args.validate_series):
+                validate_fred_series_ids(cfg)
+                if reporter is not None:
+                    print(f"{reporter._ok('[OK]')} {reporter._b('series ids validated')}")
+
+            out_csv, meta_path, df = fetch_fred_to_csv(cfg, out_csv=args.out, overwrite=bool(args.overwrite))
+
+            if reporter is not None:
+                print(
+                    f"{reporter._b('  fetched')}: T={df.shape[0]}  N={df.shape[1]}  vars=[{','.join(df.columns)}]"
+                )
+                print(f"{reporter._b('  wrote')}:   csv={out_csv}")
+                print(f"{reporter._b('  wrote')}:   meta={meta_path}")
+            return 0
         raise ValueError(f"unknown command: {args.command}")
     except ConfigError as e:
+        parser.error(str(e))
+        return 2
+    except Exception as e:
         parser.error(str(e))
         return 2

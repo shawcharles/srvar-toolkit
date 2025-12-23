@@ -61,6 +61,7 @@ plot = [
 
 fred = [
   "requests>=2.31",
+  "fredapi>=0.8",
   "python-dotenv>=1.0",
 ]
 

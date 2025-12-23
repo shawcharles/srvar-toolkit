@@ -1,0 +1,122 @@
+# srvar-toolkit FRED fetch configuration
+#
+# Run:
+#   srvar fetch-fred config/fetch_fred_demo_config.yaml
+#
+# Notes:
+# - Requires a FRED API key in environment variable FRED_API_KEY.
+#   You can place it in a local .env file at the repo root.
+# - Produces a wide CSV with a date column + one column per series.
+# - Transformation codes follow “Table 2” (1–6):
+#     1: no transform
+#     2: first difference
+#     3: second difference
+#     4: log level
+#     5: log first difference (scaled by 100)
+#     6: log second difference (scaled by 100)
+#
+# After fetching, you can reference the output from your srvar run config:
+#   data:
+#     csv_path: "data/cache/fred_macro_m.csv"
+#     date_column: "date"
+#     variables: ["CPIAUCSL", "UNRATE", ...]
+
+fred:
+  # Each key becomes a column name in the output CSV.
+  # You can use either:
+  #   VAR: SERIES_ID
+  # or:
+  #   VAR:
+  #     id: SERIES_ID
+  #     tcode: <1-6>
+  series:
+    CPIAUCSL:
+      id: CPIAUCSL
+      tcode: 5
+    UNRATE:
+      id: UNRATE
+      tcode: 1
+    FEDFUNDS:
+      id: FEDFUNDS
+      tcode: 1
+    PAYEMS:
+      id: PAYEMS
+      tcode: 5
+    HOUST:
+      id: HOUST
+      tcode: 4
+    INDPRO:
+      id: INDPRO
+      tcode: 5
+    MCUMFN:
+      id: MCUMFN
+      tcode: 2
+    EXUSUK:
+      id: EXUSUK
+      tcode: 2
+    M2SL:
+      id: M2SL
+      tcode: 6
+    PINCOME:
+      id: PINCOME
+      tcode: 5
+    PCECC96:
+      id: PCECC96
+      tcode: 5
+    PPIACO:
+      id: PPIACO
+      tcode: 5
+    TB3MS:
+      id: TB3MS
+      tcode: 1
+    TB6MS:
+      id: TB6MS
+      tcode: 1
+    GS1:
+      id: GS1
+      tcode: 1
+    GS3:
+      id: GS3
+      tcode: 1
+    GS5:
+      id: GS5
+      tcode: 1
+    GS10:
+      id: GS10
+      tcode: 1
+    BAA:
+      id: BAA
+      tcode: 1
+
+  # Optional sample window. If omitted, FRED returns full available history.
+  # start: "1960-01-01"
+  # end: "2025-01-01"
+
+  # Name of env var holding the API key (defaults to FRED_API_KEY).
+  api_key_env: "FRED_API_KEY"
+
+processing:
+  # Optional target frequency for the output time index.
+  # Examples:
+  # - "MS" monthly start
+  # - "QS" quarterly start
+  # - "W" weekly
+  frequency: "MS"
+
+  # Order of operations for frequency alignment vs transformations.
+  # - "resample_first" (default): align to `frequency` first, then apply tcodes
+  # - "transform_first": apply tcodes at native frequency first, then align
+  transform_order: "resample_first"
+
+  # When downsampling (e.g., daily -> monthly), choose: last|mean|sum
+  aggregation: "last"
+
+  # When upsampling (e.g., quarterly -> monthly), choose: ffill|interpolate
+  upsample: "ffill"
+
+  # Drop any rows with missing values after alignment/transforms.
+  dropna: true
+
+output:
+  csv_path: "data/cache/fred_macro_m.csv"
+  date_column: "date"

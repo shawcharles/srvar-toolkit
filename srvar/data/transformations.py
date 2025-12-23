@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 
@@ -55,6 +57,20 @@ def tcode_1d(x: np.ndarray, tcode: int | float, *, var_name: str | None = None) 
         out[1:] = v[1:] - v[:-1]
         return out
 
+    if tc == 3:
+        out = np.full_like(v, np.nan, dtype=float)
+        out[2:] = v[2:] - 2.0 * v[1:-1] + v[:-2]
+        return out
+
+    bad = np.isfinite(v) & (v <= 0.0)
+    if np.any(bad):
+        name = str(var_name) if var_name is not None else "series"
+        warnings.warn(
+            f"Non-positive values in {name} replaced with NaN before log transform (tcode={tc})",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     logv = np.where(v > 0.0, np.log(v), np.nan)
 
     if tc == 4:
@@ -63,8 +79,6 @@ def tcode_1d(x: np.ndarray, tcode: int | float, *, var_name: str | None = None) 
     if tc == 5:
         out = np.full_like(v, np.nan, dtype=float)
         out[1:] = 100.0 * (logv[1:] - logv[:-1])
-        if var_name is not None and var_name.upper() == "UNRATE":
-            out = out / 100.0
         return out
 
     if tc == 6:

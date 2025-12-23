@@ -42,6 +42,15 @@ srvar run config/demo_config.yaml --out outputs/my_run
 
 # Backtesting (refit + forecast over multiple origins)
 srvar backtest config/backtest_demo_config.yaml
+
+# Fetch macro data directly from FRED into a cached CSV
+srvar fetch-fred config/fetch_fred_demo_config.yaml
+
+# Preview the planned fetch/output (no network calls)
+srvar fetch-fred config/fetch_fred_demo_config.yaml --dry-run
+
+# Preflight-check series IDs exist (network call)
+srvar fetch-fred config/fetch_fred_demo_config.yaml --validate-series
 ```
 
 ### What gets written

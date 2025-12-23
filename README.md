@@ -244,6 +244,15 @@ srvar backtest config/backtest_demo_config.yaml
 
 # Override output directory for backtest
 srvar backtest config/backtest_demo_config.yaml --out outputs/my_backtest
+
+# Fetch macro data directly from FRED into a cached CSV
+srvar fetch-fred config/fetch_fred_demo_config.yaml
+
+# Preview what would be fetched/written (no network calls)
+srvar fetch-fred config/fetch_fred_demo_config.yaml --dry-run
+
+# Preflight-check that series IDs exist (network call)
+srvar fetch-fred config/fetch_fred_demo_config.yaml --validate-series
 ```
 
 See:
@@ -251,6 +260,7 @@ See:
 - `config/demo_config.yaml` (comment-rich template)
 - `config/minimal_config.yaml` (minimal runnable)
 - `config/backtest_demo_config.yaml` (comment-rich backtest template)
+- `config/fetch_fred_demo_config.yaml` (comment-rich FRED fetch template)
 
 #### Backtest config keys (high level)
 

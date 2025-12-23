@@ -2,7 +2,7 @@
 
 **Shadow-rate VAR toolkit for Bayesian macroeconomic forecasting in pure Python.**
 
-A lightweight, tested implementation of Shadow-Rate Vector Autoregression models with stochastic volatility, Minnesota shrinkage priors, and variable selection.
+A lightweight, tested implementation of Shadow-Rate Vector Autoregression models with stochastic volatility, Minnesota shrinkage priors, and variable selection, plus a config-driven CLI workflow with backtesting and FRED data fetching (`fetch-fred`) for building reproducible macro datasets.
 
 ```bash
 pip install git+https://github.com/shawcharles/srvar-toolkit.git
