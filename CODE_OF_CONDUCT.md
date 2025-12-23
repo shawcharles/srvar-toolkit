@@ -2,7 +2,7 @@
 
 ## Our Vibe
 
-We’re all here to contribute, collaborate, and have a good time. Let’s keep things friendly, respectful, and drama-free for everyone involved.
+We are all here to contribute, collaborate, and have a good time. Let’s keep things friendly, respectful, and drama-free for everyone involved.
 
 ## How We Roll
 
