@@ -6,7 +6,7 @@ import shutil
 import sys
 from typing import Any
 
-from .runner import ConfigError, load_config, run_from_config
+from .runner import ConfigError, run_from_config
 
 from . import __version__
 
@@ -86,8 +86,13 @@ class _Reporter:
 
             if kind == "dataset":
                 vars_s = ",".join([str(v) for v in payload.get("variables", [])])
+                start = payload.get("start")
+                end = payload.get("end")
+                span = ""
+                if isinstance(start, str) and isinstance(end, str) and start and end:
+                    span = f"  span=[{start} .. {end}]"
                 print(
-                    f"{self._b('  dataset')}: T={payload.get('T')}  N={payload.get('N')}  vars=[{vars_s}]"
+                    f"{self._b('  dataset')}: T={payload.get('T')}  N={payload.get('N')}  vars=[{vars_s}]{span}"
                 )
                 return
 
@@ -181,6 +186,14 @@ class _Reporter:
                     print(f"  {kind.ljust(w_kind)}  {file_s2.ljust(w_file)}  {size_s.rjust(w_size)}")
             return
 
+        if event == "validate_end":
+            elapsed_s = float(payload.get("elapsed_s", 0.0))
+            width = shutil.get_terminal_size(fallback=(88, 24)).columns
+            line = "-" * min(width, 88)
+            print(self._dim(line))
+            print(f"{self._ok('Validation complete')} {self._dim(f'({elapsed_s:.3f}s total)')}")
+            return
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="srvar")
@@ -198,6 +211,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--quiet",
         action="store_true",
         help="Suppress console output",
+    )
+    validate_p.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors in console output",
+    )
+    validate_p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show more detailed progress output",
     )
 
     run_p = sub.add_parser("run", help="Run fit/forecast from a YAML config file")
@@ -235,9 +258,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "validate":
-            run_from_config(args.config, validate_only=True)
+            reporter = None
             if not args.quiet:
-                print(f"srvar: config OK: {args.config}")
+                reporter = _Reporter(color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose))
+                reporter.header(command="srvar validate", config=str(args.config))
+            run_from_config(args.config, validate_only=True, progress=reporter)
+            if not args.quiet:
+                print(f"{reporter._ok('Config OK')}: {args.config}" if reporter is not None else f"srvar: config OK: {args.config}")
             return 0
         if args.command == "run":
             reporter = None

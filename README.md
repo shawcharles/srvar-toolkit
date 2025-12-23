@@ -90,15 +90,15 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 
 | Component | Description | How to Enable | Status |
 |-----------|-------------|---------------|--------|
-| **Conjugate BVAR (NIW)** | Closed-form posterior updates and fast sampling for VAR coefficients/covariance | `PriorSpec.niw_default(...)` | ✅ Supported |
-| **Minnesota Shrinkage** | Minnesota-style shrinkage via NIW prior construction | `PriorSpec.niw_minnesota(...)` | ✅ Supported |
-| **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | ✅ Supported |
-| **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | ✅ Supported |
-| **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | ✅ Supported |
-| **Stochastic Volatility** | Diagonal log-volatility random-walk (KSC mixture sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | ✅ Supported |
-| **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | ✅ Supported |
-| **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | ✅ Supported |
-| **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | ✅ Supported |
+| **Conjugate BVAR (NIW)** | Closed-form posterior updates and fast sampling for VAR coefficients/covariance | `PriorSpec.niw_default(...)` | Supported |
+| **Minnesota Shrinkage** | Minnesota-style shrinkage via NIW prior construction | `PriorSpec.niw_minnesota(...)` | Supported |
+| **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | Supported |
+| **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | Supported |
+| **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
+| **Stochastic Volatility** | Diagonal log-volatility random-walk (KSC mixture sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
+| **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
+| **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
+| **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

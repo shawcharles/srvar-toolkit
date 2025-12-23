@@ -27,6 +27,94 @@ class RunArtifacts:
     forecast_result: ForecastResult | None
 
 
+def _prepare_from_config(
+    cfg: dict[str, Any],
+    *,
+    emit: Callable[[str, dict[str, Any]], None] | None = None,
+) -> tuple[Dataset, ModelSpec, PriorSpec, SamplerConfig, np.random.Generator, dict[str, Any] | None]:
+    ds = load_dataset_from_csv(cfg)
+    start = None
+    end = None
+    try:
+        if isinstance(ds.time_index, pd.DatetimeIndex) and len(ds.time_index) > 0:
+            start = ds.time_index[0]
+            end = ds.time_index[-1]
+    except Exception:
+        start = None
+        end = None
+
+    if emit is not None:
+        emit(
+            "summary",
+            {
+                "kind": "dataset",
+                "T": ds.T,
+                "N": ds.N,
+                "variables": list(ds.variables),
+                "start": str(start) if start is not None else None,
+                "end": str(end) if end is not None else None,
+            },
+        )
+
+    model = build_model(cfg)
+    if emit is not None:
+        emit(
+            "summary",
+            {
+                "kind": "model",
+                "p": model.p,
+                "include_intercept": model.include_intercept,
+                "elb": bool(model.elb is not None and model.elb.enabled),
+                "sv": bool(model.volatility is not None and model.volatility.enabled),
+            },
+        )
+
+    if model.elb is not None and model.elb.enabled:
+        missing = [v for v in model.elb.applies_to if v not in ds.variables]
+        if missing:
+            raise ConfigError(f"model.elb.applies_to not found in dataset.variables: {missing}")
+
+    prior = build_prior(cfg, dataset=ds, model=model)
+    prior_cfg = cfg.get("prior", {})
+    if emit is not None and isinstance(prior_cfg, dict):
+        family = prior_cfg.get("family")
+        method = prior_cfg.get("method")
+        emit(
+            "summary",
+            {
+                "kind": "prior",
+                "family": str(family) if family is not None else None,
+                "method": str(method) if method is not None else None,
+            },
+        )
+
+    sampler, rng = build_sampler(cfg)
+    if emit is not None:
+        emit(
+            "summary",
+            {
+                "kind": "sampler",
+                "draws": sampler.draws,
+                "burn_in": sampler.burn_in,
+                "thin": sampler.thin,
+            },
+        )
+
+    fc_cfg = build_forecast_config(cfg)
+    if emit is not None and fc_cfg is not None:
+        emit(
+            "summary",
+            {
+                "kind": "forecast",
+                "horizons": list(fc_cfg["horizons"]),
+                "draws": int(fc_cfg["draws"]),
+                "quantile_levels": list(fc_cfg["quantile_levels"]),
+            },
+        )
+
+    return ds, model, prior, sampler, rng, fc_cfg
+
+
 def _require_pyyaml() -> Any:
     try:
         import yaml  # type: ignore
@@ -299,22 +387,7 @@ def build_forecast_config(cfg: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def validate_config(cfg: dict[str, Any]) -> None:
-    ds = load_dataset_from_csv(cfg)
-    model = build_model(cfg)
-
-    if model.elb is not None and model.elb.enabled:
-        missing = [v for v in model.elb.applies_to if v not in ds.variables]
-        if missing:
-            raise ConfigError(f"model.elb.applies_to not found in dataset.variables: {missing}")
-
-    build_prior(cfg, dataset=ds, model=model)
-    build_sampler(cfg)
-
-    fc = build_forecast_config(cfg)
-    if fc is not None:
-        max_h = max(fc["horizons"])
-        if max_h < 1:
-            raise ConfigError("forecast.horizons must include positive integers")
+    _prepare_from_config(cfg, emit=None)
 
 
 def _save_fit_npz(path: Path, fit_res: FitResult) -> None:
@@ -366,89 +439,19 @@ def run_from_config(
 
     emit("stage_start", {"name": "validate_config"})
     t0 = time.perf_counter()
-    validate_config(cfg)
+    ds, model, prior, sampler, rng, fc_cfg = _prepare_from_config(cfg, emit=emit)
     emit("stage_end", {"name": "validate_config", "elapsed_s": time.perf_counter() - t0})
     if validate_only:
-        emit("run_end", {"elapsed_s": time.perf_counter() - t0_total})
+        emit("validate_end", {"elapsed_s": time.perf_counter() - t0_total})
         return None
-
-    emit("stage_start", {"name": "load_dataset"})
-    t0 = time.perf_counter()
-    ds = load_dataset_from_csv(cfg)
-    emit("stage_end", {"name": "load_dataset", "elapsed_s": time.perf_counter() - t0})
-    emit(
-        "summary",
-        {
-            "kind": "dataset",
-            "T": ds.T,
-            "N": ds.N,
-            "variables": list(ds.variables),
-        },
-    )
-
-    emit("stage_start", {"name": "build_model"})
-    t0 = time.perf_counter()
-    model = build_model(cfg)
-    emit("stage_end", {"name": "build_model", "elapsed_s": time.perf_counter() - t0})
-    emit(
-        "summary",
-        {
-            "kind": "model",
-            "p": model.p,
-            "include_intercept": model.include_intercept,
-            "elb": bool(model.elb is not None and model.elb.enabled),
-            "sv": bool(model.volatility is not None and model.volatility.enabled),
-        },
-    )
-
-    emit("stage_start", {"name": "build_prior"})
-    t0 = time.perf_counter()
-    prior = build_prior(cfg, dataset=ds, model=model)
-    emit("stage_end", {"name": "build_prior", "elapsed_s": time.perf_counter() - t0})
-    prior_cfg = cfg.get("prior", {})
-    if isinstance(prior_cfg, dict):
-        family = prior_cfg.get("family")
-        method = prior_cfg.get("method")
-        emit(
-            "summary",
-            {
-                "kind": "prior",
-                "family": str(family) if family is not None else None,
-                "method": str(method) if method is not None else None,
-            },
-        )
-
-    emit("stage_start", {"name": "build_sampler"})
-    t0 = time.perf_counter()
-    sampler, rng = build_sampler(cfg)
-    emit("stage_end", {"name": "build_sampler", "elapsed_s": time.perf_counter() - t0})
-    emit(
-        "summary",
-        {
-            "kind": "sampler",
-            "draws": sampler.draws,
-            "burn_in": sampler.burn_in,
-            "thin": sampler.thin,
-        },
-    )
 
     emit("stage_start", {"name": "fit"})
     t0 = time.perf_counter()
     fit_res = fit(ds, model, prior, sampler, rng=rng)
     emit("stage_end", {"name": "fit", "elapsed_s": time.perf_counter() - t0})
 
-    fc_cfg = build_forecast_config(cfg)
     fc_res: ForecastResult | None = None
     if fc_cfg is not None:
-        emit(
-            "summary",
-            {
-                "kind": "forecast",
-                "horizons": list(fc_cfg["horizons"]),
-                "draws": int(fc_cfg["draws"]),
-                "quantile_levels": list(fc_cfg["quantile_levels"]),
-            },
-        )
         emit("stage_start", {"name": "forecast"})
         t0 = time.perf_counter()
         fc_res = forecast(
