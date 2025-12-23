@@ -1,0 +1,48 @@
+# Demo config: steady-state VAR parameterization (SSP)
+#
+# Run:
+#   srvar validate config/ssp_demo_config.yaml
+#   srvar run config/ssp_demo_config.yaml
+#
+# Notes:
+# - SSP requires include_intercept: true
+# - model.steady_state.mu0 must have length N (= number of variables)
+# - model.steady_state.v0_mu can be a scalar or list length N
+
+data:
+  csv_path: "examples/data/example.csv"
+  date_column: "date"
+  variables: ["r", "y"]
+
+model:
+  p: 2
+  include_intercept: true
+  steady_state:
+    mu0: [0.0, 0.0]
+    v0_mu: 0.1
+    ssvs:
+      enabled: false
+      spike_var: 0.0001
+      slab_var: 0.01
+      inclusion_prob: 0.5
+
+prior:
+  family: "niw"
+  method: "minnesota"
+
+sampler:
+  draws: 800
+  burn_in: 200
+  thin: 2
+  seed: 42
+
+forecast:
+  horizons: [1, 4, 8]
+  draws: 500
+  quantile_levels: [0.1, 0.5, 0.9]
+
+output:
+  out_dir: "outputs/ssp_demo_run"
+  save_fit: true
+  save_forecast: true
+  save_plots: false
