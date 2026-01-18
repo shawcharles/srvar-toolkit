@@ -99,6 +99,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
 | **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
+| **Conditional Forecasting** | Scenario forecasts with hard constraints (linear Gaussian VARs) | `srvar.scenario.conditional_forecast(...)` | Supported |
 | **Stationarity Conditioning** | Optional rejection of unstable VAR draws during forecasting/backtesting | `forecast(..., stationarity="reject")` | Supported |
 | **Structural IRFs (Cholesky)** | Cholesky-identified impulse responses from posterior draws | `srvar.analysis.irf_cholesky(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |

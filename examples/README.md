@@ -16,6 +16,7 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 8. `elb_sv_fit_forecast_plots.py`
 9. `blasso.py`
 10. `dl_fit_forecast.py`
+11. `conditional_forecast.py`
 
 ## Scripts
 
@@ -51,3 +52,6 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 
 - `dl_fit_forecast.py`
   Loads `examples/data/example.csv`, fits a Dirichlet–Laplace (DL) shrinkage VAR, and produces a small posterior predictive forecast.
+
+- `conditional_forecast.py`
+  Generates a scenario forecast by pinning a future path for selected variables (hard constraints).

@@ -151,3 +151,25 @@ irf = irf_cholesky(
 Notes:
 - `ordering=[...]` changes the recursive identification ordering.
 - For stochastic volatility models, the impact matrix uses the last volatility state in each draw.
+
+## 8) Conditional / scenario forecasting (hard constraints)
+
+Generate predictive paths conditional on a future path for selected variables:
+
+```python
+from srvar.scenario import conditional_forecast
+
+fc_cond = conditional_forecast(
+    fit_res,
+    horizons=[1, 4, 8, 12],
+    constraints={
+        # Horizons are 1-indexed steps ahead: 1 means t+1.
+        "FEDFUNDS": {1: 0.25, 2: 0.25, 3: 0.25},
+    },
+    draws=2000,
+)
+```
+
+Notes:
+- This currently supports homoskedastic (time-invariant covariance) VARs.
+- When ELB is enabled, constraints are applied to the latent (unfloored) process used for simulation.
