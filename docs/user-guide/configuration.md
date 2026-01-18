@@ -2,6 +2,8 @@
 
 This page describes how to configure models in **srvar-toolkit**.
 
+For a complete list of YAML keys and defaults, see {doc}`configuration-reference`. For backtest scoring conventions, see {doc}`evaluation`.
+
 ## Core objects
 
 Most workflows use four objects:
@@ -42,7 +44,7 @@ The top-level keys map directly to the core Python objects:
 - `sampler`: `SamplerConfig` (draws/burn-in/thin/seed)
 - `forecast` (optional): forecast horizons/draws/quantiles
 - `backtest` (optional): rolling/expanding refit settings and forecast horizons
-- `evaluation` (optional): backtest evaluation settings (coverage/PIT/CRPS + metrics export)
+- `evaluation` (optional): backtest evaluation settings (coverage/PIT/CRPS + ELB-censored scoring + metrics export)
 - `output`: output directory and which artifacts to save
 - `plots` (optional): which variables to plot and quantile bands
 
@@ -147,8 +149,10 @@ Forecasting returns both observed and latent predictive draws:
 
 Stochastic volatility is controlled by `ModelSpec(volatility=VolatilitySpec(...))`.
 
-- Volatility is currently **diagonal** (per-series variances).
-- The log-variance follows a random walk.
+The toolkit supports:
+
+- **log-volatility dynamics**: random walk (`dynamics="rw"`) or AR(1) (`dynamics="ar1"`)
+- **covariance structure**: diagonal residual covariance (`covariance="diagonal"`) or a triangular factorization (`covariance="triangular"`)
 
 In SV models:
 
@@ -195,3 +199,30 @@ All user-facing sampling/forecast functions accept `rng: np.random.Generator`.
 
 - Use a fixed seed for reproducibility.
 - Prefer passing a dedicated RNG instance rather than relying on global state.
+
+## Evaluation settings (backtest)
+
+The `evaluation` block controls which backtest diagnostics and exports are produced.
+
+Common keys:
+
+- `evaluation.metrics_table`: write `metrics.csv`
+- `evaluation.coverage.enabled`: compute/export coverage columns and plots
+- `evaluation.crps.enabled`: compute/export CRPS
+- `evaluation.pit.enabled`: write PIT histograms
+
+### ELB-censored scoring
+
+You can optionally apply ELB censoring *at evaluation time* (typically for interest-rate series), even if you are not using `model.elb`.
+
+```yaml
+evaluation:
+  elb_censor:
+    enabled: true
+    bound: 0.25
+    variables: ["FEDFUNDS"]
+    censor_realized: true
+    censor_forecasts: false
+```
+
+This floors selected variables to `bound` when computing metrics/plots.

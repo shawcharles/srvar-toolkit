@@ -60,7 +60,15 @@ README_OLD.md
 audit.md
 memory-bank/
 
-papers/
+# Papers / research artifacts (mostly large/unversioned)
+papers/*
+!papers/__init__.py
+!papers/carriero2025forecasting/
+papers/carriero2025forecasting/*
+!papers/carriero2025forecasting/__init__.py
+!papers/carriero2025forecasting/README.md
+!papers/carriero2025forecasting/run_replication.py
+!papers/carriero2025forecasting/tables.py
 assets/paper
 docs/code-review-2024-12.md
 arXiv-preprint/
@@ -70,3 +78,6 @@ arXiv-preprint/
 
 .windsurf/
 .windsurfrules
+
+REPO_REVIEW.md
+IMPLEMENTATION_PLAN.md

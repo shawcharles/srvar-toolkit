@@ -1,0 +1,99 @@
+# Carriero et al. (2025) — shadow-rate VAR backtest (15 variables)
+#
+# Pipeline:
+#   1) Fetch data (requires FRED_API_KEY):
+#      srvar fetch-fred config/carriero2025_fetch_fred_15var.yaml
+#   2) Run backtest:
+#      srvar backtest config/carriero2025_backtest_15var_shadow.yaml --out outputs/carriero2025/15var_shadow
+#
+# Notes:
+# - Paper uses p=12 lags and ELB=25bp (0.25).
+# - Forecast evaluation window (paper Section 5.1): origins 2010:01 .. 2017:12, expanding sample.
+
+data:
+  csv_path: "data/cache/carriero2025_15var.csv"
+  date_column: "date"
+  variables:
+    - EXUSUKx
+    - SP500
+    - HOUST
+    - PCEPI
+    - PPICMM
+    - WPSFD49207
+    - CES0600000008
+    - CES0600000007
+    - PAYEMS
+    - UNRATE
+    - CUMFNS
+    - INDPRO
+    - DPCERA3M086SBEA
+    - RPI
+    - FEDFUNDS
+
+model:
+  p: 12
+  include_intercept: true
+  elb:
+    enabled: true
+    bound: 0.25
+    applies_to: ["FEDFUNDS"]
+  volatility:
+    enabled: true
+    dynamics: "ar1"
+    covariance: "triangular"
+    q_prior_var: 1.0
+
+prior:
+  family: "niw"
+  method: "minnesota"
+  minnesota:
+    # Paper (Table 1 / text): θ1=0.22, θ2=0.52, θ3=100, θ4=2
+    lambda1: 0.22
+    lambda2: 0.52
+    lambda3: 2.0
+    # Matches intercept variance ≈ θ3 * σ_n^2 when using matrix-normal scaling:
+    lambda4: 45.45454545
+    # Prior mean on first own-lag (Table 1 "Minnesota prior" column)
+    own_lag_means: [0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1]
+
+sampler:
+  draws: 2000
+  burn_in: 500
+  thin: 2
+  seed: 123
+
+backtest:
+  mode: "expanding"
+  # Minimum observations at the first origin. With origin_start specified below,
+  # this is mostly a safety/validation floor.
+  min_obs: 13
+  step: 1
+  horizons: [1, 3, 6, 12, 24]
+  draws: 500
+  quantile_levels: [0.1, 0.5, 0.9]
+  origin_start: "2010-01-01"
+  origin_end: "2017-12-01"
+
+evaluation:
+  metrics_table: true
+  elb_censor:
+    enabled: true
+    bound: 0.25
+    variables: ["FEDFUNDS"]
+    censor_realized: true
+    censor_forecasts: false
+  coverage:
+    enabled: true
+    intervals: [0.5, 0.8, 0.9]
+    use_latent: false
+  crps:
+    enabled: true
+    use_latent: false
+  pit:
+    enabled: false
+
+output:
+  out_dir: "outputs/carriero2025/15var_shadow"
+  save_plots: false
+  save_forecasts: false
+  store_forecasts_in_memory: false

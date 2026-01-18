@@ -105,6 +105,7 @@ def sample_gamma_rows(
     if not (0.0 < inclusion_prob < 1.0):
         raise ValueError("inclusion_prob must be in (0, 1)")
 
+    fixed: np.ndarray
     if fixed_mask is None:
         fixed = np.zeros(k, dtype=bool)
     else:

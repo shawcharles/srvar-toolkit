@@ -1,5 +1,3 @@
-import numpy as np
-
 from srvar.spec import PriorSpec
 
 

@@ -10,7 +10,7 @@ from srvar.sv import VolatilitySpec
 def _toy_dataset(*, t: int = 70, n: int = 2, seed: int = 0) -> Dataset:
     rng = np.random.default_rng(seed)
     y = rng.standard_normal((t, n))
-    return Dataset.from_arrays(values=y, variables=[f"y{i+1}" for i in range(n)])
+    return Dataset.from_arrays(values=y, variables=[f"y{i + 1}" for i in range(n)])
 
 
 def test_dl_runs_no_elb() -> None:

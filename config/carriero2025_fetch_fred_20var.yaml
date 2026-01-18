@@ -1,0 +1,49 @@
+# Carriero et al. (2025) — 20-variable dataset (Table 1) via FRED fetch
+#
+# This config targets the 20-variable setup:
+#   - 14 non-interest-rate variables (Panel A)
+#   - 6 nominal interest rates (Panel B)
+#
+# See `config/carriero2025_fetch_fred_15var.yaml` for more notes on transforms.
+
+fred:
+  api_key_env: "FRED_API_KEY"
+  start: "1959-03-01"
+  end: "2022-08-31"
+
+  series:
+    # Panel A: non-interest-rate variables (x_t)
+    EXUSUKx: { id: "EXUSUKx", tcode: 5, scale: 12 }
+    SP500: { id: "SP500", tcode: 5, scale: 12 }
+    HOUST: { id: "HOUST", tcode: 4 }
+    PCEPI: { id: "PCEPI", tcode: 5, scale: 12 }
+    PPICMM: { id: "PPICMM", tcode: 5, scale: 12 }
+    WPSFD49207: { id: "WPSFD49207", tcode: 5, scale: 12 }
+    CES0600000008: { id: "CES0600000008", tcode: 5, scale: 12 }
+    CES0600000007: { id: "CES0600000007", tcode: 1 }
+    PAYEMS: { id: "PAYEMS", tcode: 5, scale: 12 }
+    UNRATE: { id: "UNRATE", tcode: 1 }
+    CUMFNS: { id: "CUMFNS", tcode: 1 }
+    INDPRO: { id: "INDPRO", tcode: 5, scale: 12 }
+    DPCERA3M086SBEA: { id: "DPCERA3M086SBEA", tcode: 5, scale: 12 }
+    RPI: { id: "RPI", tcode: 5, scale: 12 }
+
+    # Panel B: nominal interest rates (i_t)
+    BAA: { id: "BAA", tcode: 1 }
+    GS10: { id: "GS10", tcode: 1 }
+    GS5: { id: "GS5", tcode: 1 }
+    GS1: { id: "GS1", tcode: 1 }
+    TB6MS: { id: "TB6MS", tcode: 1 }
+    FEDFUNDS: { id: "FEDFUNDS", tcode: 1 }
+
+processing:
+  frequency: "MS"
+  transform_order: "resample_first"
+  aggregation: "last"
+  upsample: "ffill"
+  dropna: true
+
+output:
+  csv_path: "data/cache/carriero2025_20var.csv"
+  date_column: "date"
+

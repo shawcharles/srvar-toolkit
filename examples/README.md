@@ -11,10 +11,11 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 3. `bvar_minnesota_fit_forecast.py`
 4. `elb_fit_forecast.py`
 5. `sv_fit_forecast.py`
-6. `elb_sv_fit_forecast.py`
-7. `elb_sv_fit_forecast_plots.py`
-8. `blasso.py`
-9. `dl_fit_forecast.py`
+6. `sv_triangular_fit_forecast.py`
+7. `elb_sv_fit_forecast.py`
+8. `elb_sv_fit_forecast_plots.py`
+9. `blasso.py`
+10. `dl_fit_forecast.py`
 
 ## Scripts
 
@@ -35,6 +36,9 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 
 - `sv_fit_forecast.py`
   Loads `examples/data/example.csv`, fits a stochastic-volatility VAR (SVRW), and forecasts forward.
+
+- `sv_triangular_fit_forecast.py`
+  Fits a stochastic-volatility VAR with a triangular covariance factor (full covariance, time-invariant correlations).
 
 - `elb_sv_fit_forecast.py`
   Loads `examples/data/example.csv`, fits a combined ELB + stochastic volatility model, and forecasts forward.

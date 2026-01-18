@@ -1,5 +1,5 @@
-from .data.dataset import Dataset
 from .api import fit, forecast
+from .data.dataset import Dataset
 from .elb import ElbSpec
 from .sv import VolatilitySpec
 from .theme import (

@@ -106,9 +106,25 @@
    # Quantiles computed from predictive draws and written into metrics/plots.
    quantile_levels: [0.1, 0.5, 0.9]
 
+   # Optional: enforce stationarity of VAR dynamics during forecast simulation at each origin.
+   # stationarity: "allow"         # "allow" (default) or "reject"
+   # stationarity_tol: 1.0e-10     # require max(abs(eigvals)) < 1 - tol
+   # stationarity_max_draws: null  # NIW posterior sampling only (default: 50 * draws)
+
  evaluation:
    # Forecast evaluation settings.
    # These control which plots/metrics are generated after the backtest loop.
+
+   # Optional: apply an ELB floor at *evaluation time* for selected variables.
+   # This is useful when a paper's scoring convention censors realized rates (and optionally forecasts)
+   # at an effective lower bound, independent of the model estimation choice.
+   #
+   # elb_censor:
+   #   enabled: true
+   #   bound: 0.25
+   #   variables: ["r"]
+   #   censor_realized: true
+   #   censor_forecasts: false
 
    coverage:
      # Empirical coverage of prediction intervals by horizon.
@@ -141,12 +157,17 @@
    # If true, write metrics.csv (CRPS/RMSE/MAE + coverage columns).
    metrics_table: true
 
- output:
+output:
    # Output directory for all artifacts.
    out_dir: "outputs/demo_backtest"
 
    # Save PNG plots (requires matplotlib).
    save_plots: true
+
+   # Store per-origin forecasts in memory.
+   # - Required for plots.
+   # - Set to false for large runs (with save_plots=false) to reduce RAM.
+   store_forecasts_in_memory: true
 
    # Save per-origin forecast draws to outputs/forecasts/*.npz.
    # This can be large for real runs.

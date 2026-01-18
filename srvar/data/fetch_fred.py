@@ -75,6 +75,11 @@ def plan_fetch_fred(
         elif name in transforms_cfg:
             tcodes[name] = _as_number(transforms_cfg[name], key=f"processing.transforms.{name}")
 
+    scales: dict[str, float] = {}
+    for name, spec in series_map.items():
+        if "scale" in spec:
+            scales[name] = _as_number(spec["scale"], key=f"fred.series.{name}.scale")
+
     start = fred_cfg.get("start")
     end = fred_cfg.get("end")
     if start is not None:
@@ -90,7 +95,14 @@ def plan_fetch_fred(
             "start": start,
             "end": end,
             "api_key_env": api_key_env,
-            "series": {name: {"id": str(spec.get("id")), "tcode": tcodes.get(name)} for name, spec in series_map.items()},
+            "series": {
+                name: {
+                    "id": str(spec.get("id")),
+                    "tcode": tcodes.get(name),
+                    "scale": scales.get(name),
+                }
+                for name, spec in series_map.items()
+            },
         },
         "processing": {
             "frequency": freq,
@@ -304,6 +316,11 @@ def fetch_fred_dataframe(cfg: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, A
         elif name in transforms_cfg:
             tcodes[name] = _as_number(transforms_cfg[name], key=f"processing.transforms.{name}")
 
+    scales: dict[str, float] = {}
+    for name, spec in series_map.items():
+        if "scale" in spec:
+            scales[name] = _as_number(spec["scale"], key=f"fred.series.{name}.scale")
+
     raw_parts: list[pd.Series] = []
     for name, spec in series_map.items():
         series_id = _as_str(spec.get("id"), key=f"fred.series.{name}.id")
@@ -317,14 +334,17 @@ def fetch_fred_dataframe(cfg: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, A
         s.index = pd.to_datetime(s.index)
         s = s.sort_index()
 
-        if transform_order == "transform_first" and name in tcodes:
-            tc = tcodes[name]
-            s = pd.Series(
-                tcode_1d(s.to_numpy(dtype=float), tc, var_name=series_id),
-                index=s.index,
-                name=name,
-                dtype=float,
-            )
+        if transform_order == "transform_first":
+            if name in tcodes:
+                tc = tcodes[name]
+                s = pd.Series(
+                    tcode_1d(s.to_numpy(dtype=float), tc, var_name=series_id),
+                    index=s.index,
+                    name=name,
+                    dtype=float,
+                )
+            if name in scales:
+                s = float(scales[name]) * s
 
         raw_parts.append(s)
 
@@ -333,16 +353,25 @@ def fetch_fred_dataframe(cfg: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, A
     if freq is not None:
         df = _resample_frame(df, frequency=freq, aggregation=aggregation, upsample=upsample)
 
-    if transform_order == "resample_first" and tcodes:
-        out = df.copy()
-        for col, tc in tcodes.items():
-            if col not in out.columns:
-                raise ValueError(f"transform column not found: {col}")
+    if transform_order == "resample_first":
+        if tcodes:
+            out = df.copy()
+            for col, tc in tcodes.items():
+                if col not in out.columns:
+                    raise ValueError(f"transform column not found: {col}")
 
-            series_id = series_map[col].get("id")
-            var_name = str(series_id) if series_id is not None else col
-            out[col] = tcode_1d(out[col].to_numpy(dtype=float), tc, var_name=var_name)
-        df = out
+                series_id_any = series_map[col].get("id")
+                var_name = str(series_id_any) if series_id_any is not None else col
+                out[col] = tcode_1d(out[col].to_numpy(dtype=float), tc, var_name=var_name)
+            df = out
+
+        if scales:
+            out = df.copy()
+            for col, sc in scales.items():
+                if col not in out.columns:
+                    raise ValueError(f"scale column not found: {col}")
+                out[col] = float(sc) * out[col]
+            df = out
 
     dropna = processing_cfg.get("dropna", True)
     dropna = _as_bool(dropna, key="processing.dropna")
@@ -355,7 +384,10 @@ def fetch_fred_dataframe(cfg: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, A
         "start": start,
         "end": end,
         "api_key_env": api_key_env,
-        "series": {name: {"id": str(spec.get("id")), "tcode": tcodes.get(name)} for name, spec in series_map.items()},
+        "series": {
+            name: {"id": str(spec.get("id")), "tcode": tcodes.get(name), "scale": scales.get(name)}
+            for name, spec in series_map.items()
+        },
         "processing": {
             "frequency": freq,
             "aggregation": aggregation,

@@ -19,11 +19,16 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - YAML-only configuration support for SSP via `model.steady_state`.
 - SSP example script (`examples/ssp_fit_forecast.py`).
 - SSP test coverage (`tests/test_ssp.py`).
+- ELB-censored backtest evaluation via `evaluation.elb_censor` (censor realized values and optionally forecast draws).
+- Streaming backtest evaluation for `metrics.csv` via `output.store_forecasts_in_memory` (reduces RAM for long runs).
+- Synthetic memory benchmark script (`scripts/benchmark_backtest_memory.py`).
 
 ### Changed
 
 - Refactored `srvar.samplers` into smaller modules and re-exported the public API.
 - `forecast()` now requires stored `beta_draws` when `steady_state` is enabled.
+- Split config/backtest/evaluation/artifacts logic into `srvar.config`, `srvar.backtest`, `srvar.evaluation`, `srvar.artifacts` (keeping `srvar.runner` as a thin façade).
+- Backtest evaluation flags now control both computation and outputs (`evaluation.coverage.enabled`, `evaluation.crps.enabled`, `evaluation.pit.enabled`).
 
 ## [0.1.0] - 2025-12-22
 

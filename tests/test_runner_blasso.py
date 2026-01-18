@@ -6,7 +6,9 @@ from srvar.spec import ModelSpec
 
 
 def test_runner_build_prior_parses_blasso() -> None:
-    ds = Dataset.from_arrays(values=np.random.default_rng(0).standard_normal((40, 2)), variables=["y1", "y2"])
+    ds = Dataset.from_arrays(
+        values=np.random.default_rng(0).standard_normal((40, 2)), variables=["y1", "y2"]
+    )
     model = ModelSpec(p=1, include_intercept=True)
 
     cfg = {

@@ -9,7 +9,7 @@ from srvar.spec import ModelSpec, MuSSVSSpec, PriorSpec, SamplerConfig, SteadySt
 def _toy_dataset(*, t: int = 70, n: int = 2, seed: int = 123) -> Dataset:
     rng = np.random.default_rng(seed)
     y = rng.standard_normal((t, n))
-    return Dataset.from_arrays(values=y, variables=[f"y{i+1}" for i in range(n)])
+    return Dataset.from_arrays(values=y, variables=[f"y{i + 1}" for i in range(n)])
 
 
 def test_ssp_fit_produces_mu_draws_and_forecast_shapes() -> None:

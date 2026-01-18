@@ -80,6 +80,7 @@ target-version = ["py311"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
 select = [
   "E", "F", "I",
   "B",
@@ -95,13 +96,24 @@ known-first-party = ["srvar"]
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
 no_implicit_optional = true
 strict_equality = true
 
 disallow_untyped_defs = false
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "pandas",
+  "pandas.*",
+  "scipy",
+  "scipy.*",
+  "numba",
+  "numba.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=prepend"

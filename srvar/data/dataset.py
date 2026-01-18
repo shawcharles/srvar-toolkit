@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -32,6 +32,7 @@ class Dataset:
     The class is immutable (``frozen=True``) and performs validation in
     :meth:`~Dataset.__post_init__`.
     """
+
     time_index: pd.Index
     variables: list[str]
     values: np.ndarray
@@ -42,7 +43,7 @@ class Dataset:
         values: np.ndarray,
         variables: Sequence[str],
         time_index: Iterable[object] | pd.Index | None = None,
-    ) -> "Dataset":
+    ) -> Dataset:
         """Construct a :class:`~srvar.data.dataset.Dataset` from array-like inputs.
 
         Parameters

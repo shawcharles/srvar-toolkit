@@ -4,8 +4,8 @@ This project targets transparency and reproducibility and is currently in an **a
 
 ## Modeling limitations
 
-- **Diagonal stochastic volatility only**: volatility is modeled per-series; there is no time-varying covariance / full-covariance SV.
-- **VAR-only structure**: the high-level API currently focuses on VAR(p) models with optional ELB and SV. More structural parameterizations (e.g. steady-state VARs) are not yet implemented.
+- **Stochastic volatility is not “fully general”**: the toolkit supports diagonal SV and a triangular factorization with time-invariant correlations, but it does not currently implement fully time-varying correlation / covariance dynamics.
+- **Reduced-form focus**: the high-level API focuses on reduced-form VAR(p) models with optional ELB, stochastic volatility, and steady-state parameterization. Structural identification tooling (IRFs/FEVD/sign restrictions) is not yet a first-class workflow.
 - **ELB treatment**: ELB handling is implemented via latent shadow-rate augmentation for selected series.
 
 ## Statistical limitations / caveats
@@ -27,6 +27,11 @@ Rules of thumb:
 
 - Start with small samplers to validate data plumbing and model stability.
 - Increase draws only once the model runs end-to-end and outputs look reasonable.
+
+Backtesting can also be memory-heavy. For long backtests, prefer streaming evaluation:
+
+- `output.save_plots: false`
+- `output.store_forecasts_in_memory: false`
 
 ## Numerical considerations
 

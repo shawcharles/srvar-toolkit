@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
+
 from .elb import ElbSpec
 from .sv import VolatilitySpec
 from .var import design_matrix
-
-import numpy as np
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,15 +38,17 @@ class SteadyStateSpec:
         if np.any(~np.isfinite(m)):
             raise ValueError("mu0 must be finite")
 
-        if isinstance(self.v0_mu, (float, int, np.floating, np.integer)) and not isinstance(self.v0_mu, bool):
-            v = float(self.v0_mu)
-            if not np.isfinite(v) or v <= 0:
+        if isinstance(self.v0_mu, (float, int, np.floating, np.integer)) and not isinstance(
+            self.v0_mu, bool
+        ):
+            v_scalar = float(self.v0_mu)
+            if not np.isfinite(v_scalar) or v_scalar <= 0:
                 raise ValueError("v0_mu must be finite and > 0")
         else:
-            v = np.asarray(self.v0_mu, dtype=float).reshape(-1)
-            if v.shape != (m.shape[0],):
+            v_vec = np.asarray(self.v0_mu, dtype=float).reshape(-1)
+            if v_vec.shape != (m.shape[0],):
                 raise ValueError("v0_mu must be a scalar or have shape (N,)")
-            if np.any(~np.isfinite(v)) or np.any(v <= 0):
+            if np.any(~np.isfinite(v_vec)) or np.any(v_vec <= 0):
                 raise ValueError("v0_mu must be finite and > 0")
 
 
@@ -68,13 +70,16 @@ class ModelSpec:
         sampled during estimation.
     volatility:
         Optional stochastic volatility configuration. When enabled, the model uses a
-        diagonal stochastic volatility random-walk (SVRW) specification.
+        stochastic volatility specification for time-varying variances (random-walk or
+        AR(1) dynamics). Residual covariance can be diagonal (independent shocks) or a
+        triangular factorization with time-invariant correlations.
 
     Notes
     -----
     ``ModelSpec`` is intentionally small and immutable. The heavy lifting is done in
     :func:`srvar.api.fit`.
     """
+
     p: int
     include_intercept: bool = True
     steady_state: SteadyStateSpec | None = None
@@ -103,6 +108,7 @@ class NIWPrior:
     - ``v0`` has shape ``(K, K)``
     - ``s0`` has shape ``(N, N)``
     """
+
     m0: np.ndarray  # (K, N)
     v0: np.ndarray  # (K, K)
     s0: np.ndarray  # (N, N)
@@ -130,6 +136,7 @@ class SSVSSpec:
         If True and an intercept is included in the model, the intercept is always
         included.
     """
+
     spike_var: float = 1e-4
     slab_var: float = 100.0
     inclusion_prob: float = 0.5
@@ -192,6 +199,7 @@ class DLSpec:
         Small positive initialization scale used for the latent DL variables
         (named ``DL_scaler`` in the MATLAB code).
     """
+
     abeta: float = 0.5
     dl_scaler: float = 0.1
 
@@ -224,6 +232,7 @@ class PriorSpec:
     dl:
         Optional Dirichlet–Laplace hyperparameters (required when ``family='dl'``).
     """
+
     family: str
     niw: NIWPrior
     ssvs: SSVSSpec | None = None
@@ -231,7 +240,7 @@ class PriorSpec:
     dl: DLSpec | None = None
 
     @staticmethod
-    def niw_default(*, k: int, n: int) -> "PriorSpec":
+    def niw_default(*, k: int, n: int) -> PriorSpec:
         """Construct a simple default NIW prior.
 
         This uses a zero prior mean for coefficients and relatively weak
@@ -264,7 +273,7 @@ class PriorSpec:
         own_lag_means: np.ndarray | list[float] | None = None,
         own_lag_mean: float = 0.0,
         min_sigma2: float = 1e-12,
-    ) -> "PriorSpec":
+    ) -> PriorSpec:
         """Construct an NIW prior with Minnesota-style shrinkage.
 
         The Minnesota prior shrinks coefficients toward a random-walk/white-noise
@@ -375,7 +384,7 @@ class PriorSpec:
         inclusion_prob: float = 0.5,
         intercept_slab_var: float | None = None,
         fix_intercept: bool = True,
-    ) -> "PriorSpec":
+    ) -> PriorSpec:
         """Construct a prior specification for SSVS estimation.
 
         Parameters
@@ -400,6 +409,7 @@ class PriorSpec:
         if n < 1:
             raise ValueError("n must be >= 1")
 
+        m0a: np.ndarray
         if m0 is None:
             m0a = np.zeros((k, n), dtype=float)
         else:
@@ -449,12 +459,13 @@ class PriorSpec:
         b0_L: float = 1.0,
         tau_init: float = 1e4,
         lambda_init: float = 2.0,
-    ) -> "PriorSpec":
+    ) -> PriorSpec:
         if k < 1:
             raise ValueError("k must be >= 1")
         if n < 1:
             raise ValueError("n must be >= 1")
 
+        m0a: np.ndarray
         if m0 is None:
             m0a = np.zeros((k, n), dtype=float)
         else:
@@ -502,12 +513,13 @@ class PriorSpec:
         nu0: float | None = None,
         abeta: float = 0.5,
         dl_scaler: float = 0.1,
-    ) -> "PriorSpec":
+    ) -> PriorSpec:
         if k < 1:
             raise ValueError("k must be >= 1")
         if n < 1:
             raise ValueError("n must be >= 1")
 
+        m0a: np.ndarray
         if m0 is None:
             m0a = np.zeros((k, n), dtype=float)
         else:
@@ -554,6 +566,7 @@ class SamplerConfig:
     burn-in/thinning is applied post hoc. For iterative samplers (ELB, SSVS, SV),
     burn-in/thinning is applied online.
     """
+
     draws: int = 2000
     burn_in: int = 500
     thin: int = 1

@@ -5,15 +5,29 @@ import numpy as np
 from .bvar import posterior_niw
 from .data.dataset import Dataset
 from .elb import sample_shadow_value_svrw
-from .linalg import symmetrize
 from .results import FitResult
-from .spec import ModelSpec, PriorSpec, SamplerConfig
-from .sv import log_e2_star, sample_beta_svrw, sample_h0, sample_h_svrw, sample_sigma_eta2
-from .var import demean_data, design_matrix
-
 from .samplers_blasso import _blasso_update_adaptive, _blasso_update_global, _blasso_v0_from_state
 from .samplers_dl import _dl_sample_beta_svrw, _dl_update
-from .samplers_ssp import _asum_from_beta, _strip_intercept_niw_blocks, sample_mu_gamma, sample_steady_state_mu_svrw
+from .samplers_ssp import (
+    _asum_from_beta,
+    _strip_intercept_niw_blocks,
+    sample_mu_gamma,
+    sample_steady_state_mu_svrw,
+)
+from .spec import ModelSpec, PriorSpec, SamplerConfig
+from .sv import (
+    log_e2_star,
+    sample_ar1_params,
+    sample_beta_svrw,
+    sample_h0,
+    sample_h0_ar1,
+    sample_h_ar1,
+    sample_h_svrw,
+    sample_sigma_eta2,
+    sample_sigma_eta2_ar1,
+)
+from .var import demean_data, design_matrix
+
 
 def _fit_svrw(
     *,
@@ -27,6 +41,8 @@ def _fit_svrw(
     if vol is None or not vol.enabled:
         raise ValueError("volatility must be enabled")
 
+    ar1 = bool(vol.dynamics == "ar1")
+
     ss = model.steady_state
     if ss is not None:
         applies_to_idx: list[int] = []
@@ -37,8 +53,8 @@ def _fit_svrw(
             for name in model.elb.applies_to:
                 try:
                     applies_to_idx.append(dataset.variables.index(name))
-                except ValueError as e:
-                    raise ValueError(f"elb.applies_to contains unknown variable: {name}") from e
+                except ValueError as exc:
+                    raise ValueError(f"elb.applies_to contains unknown variable: {name}") from exc
 
             for j in applies_to_idx:
                 mask = dataset.values[:, j] <= (model.elb.bound + model.elb.tol)
@@ -82,7 +98,9 @@ def _fit_svrw(
         dl_zeta: float | None = None
         dl_inv_v0: np.ndarray | None = None
 
-        m0_ssp, v0_ssp = _strip_intercept_niw_blocks(m0=niw.m0, v0=niw.v0, k_no_intercept=x.shape[1])
+        m0_ssp, v0_ssp = _strip_intercept_niw_blocks(
+            m0=niw.m0, v0=niw.v0, k_no_intercept=x.shape[1]
+        )
         mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
         beta_lags = mn.copy()
 
@@ -109,24 +127,34 @@ def _fit_svrw(
         h0 = np.log(np.var(y, axis=0) + 1e-12)
         h = np.tile(h0.reshape(1, -1), (t_eff, 1))
         sigma_eta2 = 0.05 * np.ones(n, dtype=float)
+        gamma0 = (1.0 - float(vol.phi_prior_mean)) * h0 if ar1 else None
+        phi = np.full(n, float(vol.phi_prior_mean), dtype=float) if ar1 else None
 
         beta_keep: list[np.ndarray] = []
         h_keep: list[np.ndarray] = []
         h0_keep: list[np.ndarray] = []
         sigma_eta2_keep: list[np.ndarray] = []
-        y_lat_keep: list[np.ndarray] | None = [] if (model.elb is not None and model.elb.enabled) else None
+        gamma0_keep: list[np.ndarray] = []
+        phi_keep: list[np.ndarray] = []
+        y_lat_keep: list[np.ndarray] | None = (
+            [] if (model.elb is not None and model.elb.enabled) else None
+        )
         mu_keep: list[np.ndarray] = []
         mu_gamma_keep: list[np.ndarray] = []
 
         for it in range(sampler.draws):
             y_dm = demean_data(y_lat, mu)
             x, y = design_matrix(y_dm, model.p, include_intercept=False)
-            m0_ssp, v0_ssp = _strip_intercept_niw_blocks(m0=niw.m0, v0=niw.v0, k_no_intercept=x.shape[1])
+            m0_ssp, v0_ssp = _strip_intercept_niw_blocks(
+                m0=niw.m0, v0=niw.v0, k_no_intercept=x.shape[1]
+            )
 
             if prior_family == "dl":
                 if dl_inv_v0 is None:
                     raise RuntimeError("dl state missing")
-                beta_lags = _dl_sample_beta_svrw(x=x, y=y, m0=m0_ssp, inv_v0_vec=dl_inv_v0, h=h, rng=rng)
+                beta_lags = _dl_sample_beta_svrw(
+                    x=x, y=y, m0=m0_ssp, inv_v0_vec=dl_inv_v0, h=h, rng=rng
+                )
             else:
                 if prior_family == "blasso":
                     if tau is None:
@@ -191,27 +219,70 @@ def _fit_svrw(
 
             for i in range(n):
                 y_star = log_e2_star(e[:, i], epsilon=vol.epsilon)
-                h[:, i] = sample_h_svrw(
-                    y_star=y_star,
-                    h=h[:, i],
-                    sigma_eta2=float(sigma_eta2[i]),
-                    h0=float(h0[i]),
-                    rng=rng,
-                )
-                h0[i] = sample_h0(
-                    h1=float(h[0, i]),
-                    sigma_eta2=float(sigma_eta2[i]),
-                    prior_mean=vol.h0_prior_mean,
-                    prior_var=vol.h0_prior_var,
-                    rng=rng,
-                )
-                sigma_eta2[i] = sample_sigma_eta2(
-                    h=h[:, i],
-                    h0=float(h0[i]),
-                    nu0=vol.sigma_eta_prior_nu0,
-                    s0=vol.sigma_eta_prior_s0,
-                    rng=rng,
-                )
+                if ar1:
+                    if gamma0 is None or phi is None:
+                        raise RuntimeError("AR(1) volatility state missing")
+                    h[:, i] = sample_h_ar1(
+                        y_star=y_star,
+                        h=h[:, i],
+                        sigma_eta2=float(sigma_eta2[i]),
+                        h0=float(h0[i]),
+                        gamma0=float(gamma0[i]),
+                        phi=float(phi[i]),
+                        rng=rng,
+                    )
+                    h0[i] = sample_h0_ar1(
+                        h1=float(h[0, i]),
+                        sigma_eta2=float(sigma_eta2[i]),
+                        gamma0=float(gamma0[i]),
+                        phi=float(phi[i]),
+                        prior_mean=vol.h0_prior_mean,
+                        prior_var=vol.h0_prior_var,
+                        rng=rng,
+                    )
+                    g0_i, phi_i = sample_ar1_params(
+                        h=h[:, i],
+                        h0=float(h0[i]),
+                        sigma_eta2=float(sigma_eta2[i]),
+                        phi_prior_mean=float(vol.phi_prior_mean),
+                        phi_prior_var=float(vol.phi_prior_var),
+                        gamma0_prior_mean=float(vol.gamma0_prior_mean),
+                        gamma0_prior_var=float(vol.gamma0_prior_var),
+                        rng=rng,
+                    )
+                    gamma0[i] = float(g0_i)
+                    phi[i] = float(phi_i)
+                    sigma_eta2[i] = sample_sigma_eta2_ar1(
+                        h=h[:, i],
+                        h0=float(h0[i]),
+                        gamma0=float(gamma0[i]),
+                        phi=float(phi[i]),
+                        nu0=vol.sigma_eta_prior_nu0,
+                        s0=vol.sigma_eta_prior_s0,
+                        rng=rng,
+                    )
+                else:
+                    h[:, i] = sample_h_svrw(
+                        y_star=y_star,
+                        h=h[:, i],
+                        sigma_eta2=float(sigma_eta2[i]),
+                        h0=float(h0[i]),
+                        rng=rng,
+                    )
+                    h0[i] = sample_h0(
+                        h1=float(h[0, i]),
+                        sigma_eta2=float(sigma_eta2[i]),
+                        prior_mean=vol.h0_prior_mean,
+                        prior_var=vol.h0_prior_var,
+                        rng=rng,
+                    )
+                    sigma_eta2[i] = sample_sigma_eta2(
+                        h=h[:, i],
+                        h0=float(h0[i]),
+                        nu0=vol.sigma_eta_prior_nu0,
+                        s0=vol.sigma_eta_prior_s0,
+                        rng=rng,
+                    )
 
             if prior_family == "blasso":
                 if blasso is None or tau is None:
@@ -243,7 +314,13 @@ def _fit_svrw(
                         rng=rng,
                     )
             elif prior_family == "dl":
-                if dl_psi is None or dl_vartheta is None or dl_zeta is None or dl_inv_v0 is None or dl is None:
+                if (
+                    dl_psi is None
+                    or dl_vartheta is None
+                    or dl_zeta is None
+                    or dl_inv_v0 is None
+                    or dl is None
+                ):
                     raise RuntimeError("dl state missing")
                 dl_psi, dl_vartheta, dl_zeta, dl_inv_v0 = _dl_update(
                     beta=beta_lags,
@@ -259,6 +336,9 @@ def _fit_svrw(
                 h_keep.append(h.copy())
                 h0_keep.append(h0.copy())
                 sigma_eta2_keep.append(sigma_eta2.copy())
+                if ar1 and gamma0 is not None and phi is not None:
+                    gamma0_keep.append(gamma0.copy())
+                    phi_keep.append(phi.copy())
                 mu_keep.append(mu.copy())
                 if mu_gamma is not None:
                     mu_gamma_keep.append(mu_gamma.copy())
@@ -267,7 +347,9 @@ def _fit_svrw(
 
         latent_dataset = None
         if model.elb is not None and model.elb.enabled:
-            latent_dataset = Dataset.from_arrays(values=y_lat, variables=dataset.variables, time_index=dataset.time_index)
+            latent_dataset = Dataset.from_arrays(
+                values=y_lat, variables=dataset.variables, time_index=dataset.time_index
+            )
 
         return FitResult(
             dataset=dataset,
@@ -282,20 +364,22 @@ def _fit_svrw(
             h_draws=np.stack(h_keep) if h_keep else None,
             h0_draws=np.stack(h0_keep) if h0_keep else None,
             sigma_eta2_draws=np.stack(sigma_eta2_keep) if sigma_eta2_keep else None,
+            sv_gamma0_draws=np.stack(gamma0_keep) if gamma0_keep else None,
+            sv_phi_draws=np.stack(phi_keep) if phi_keep else None,
             mu_draws=np.stack(mu_keep) if mu_keep else None,
             mu_gamma_draws=np.stack(mu_gamma_keep) if mu_gamma_keep else None,
         )
 
-    applies_to_idx: list[int] = []
-    elb_t_idx: dict[int, np.ndarray] = {}
+    applies_to_idx = []
+    elb_t_idx = {}
 
     y_lat = dataset.values.copy()
     if model.elb is not None and model.elb.enabled:
         for name in model.elb.applies_to:
             try:
                 applies_to_idx.append(dataset.variables.index(name))
-            except ValueError as e:
-                raise ValueError(f"elb.applies_to contains unknown variable: {name}") from e
+            except ValueError as exc:
+                raise ValueError(f"elb.applies_to contains unknown variable: {name}") from exc
 
         for j in applies_to_idx:
             mask = dataset.values[:, j] <= (model.elb.bound + model.elb.tol)
@@ -314,16 +398,16 @@ def _fit_svrw(
     if prior_family == "dl" and dl is None:
         raise ValueError("prior.family='dl' requires prior.dl")
 
-    tau: np.ndarray | None = None
-    lambda_: float | None = None
-    lambda_c: float | None = None
-    lambda_L: float | None = None
-    c_mask: np.ndarray | None = None
+    tau = None
+    lambda_ = None
+    lambda_c = None
+    lambda_L = None
+    c_mask = None
 
-    dl_psi: np.ndarray | None = None
-    dl_vartheta: np.ndarray | None = None
-    dl_zeta: float | None = None
-    dl_inv_v0: np.ndarray | None = None
+    dl_psi = None
+    dl_vartheta = None
+    dl_zeta = None
+    dl_inv_v0 = None
 
     mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
     beta = mn.copy()
@@ -353,12 +437,16 @@ def _fit_svrw(
     h0 = np.log(np.var(y, axis=0) + 1e-12)
     h = np.tile(h0.reshape(1, -1), (t_eff, 1))
     sigma_eta2 = 0.05 * np.ones(n, dtype=float)
+    gamma0 = (1.0 - float(vol.phi_prior_mean)) * h0 if ar1 else None
+    phi = np.full(n, float(vol.phi_prior_mean), dtype=float) if ar1 else None
 
-    beta_keep: list[np.ndarray] = []
-    h_keep: list[np.ndarray] = []
-    h0_keep: list[np.ndarray] = []
-    sigma_eta2_keep: list[np.ndarray] = []
-    y_lat_keep: list[np.ndarray] | None = [] if (model.elb is not None and model.elb.enabled) else None
+    beta_keep = []
+    h_keep = []
+    h0_keep = []
+    sigma_eta2_keep = []
+    gamma0_keep = []
+    phi_keep = []
+    y_lat_keep = [] if (model.elb is not None and model.elb.enabled) else None
 
     for it in range(sampler.draws):
         x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
@@ -398,27 +486,70 @@ def _fit_svrw(
 
         for i in range(n):
             y_star = log_e2_star(e[:, i], epsilon=vol.epsilon)
-            h[:, i] = sample_h_svrw(
-                y_star=y_star,
-                h=h[:, i],
-                sigma_eta2=float(sigma_eta2[i]),
-                h0=float(h0[i]),
-                rng=rng,
-            )
-            h0[i] = sample_h0(
-                h1=float(h[0, i]),
-                sigma_eta2=float(sigma_eta2[i]),
-                prior_mean=vol.h0_prior_mean,
-                prior_var=vol.h0_prior_var,
-                rng=rng,
-            )
-            sigma_eta2[i] = sample_sigma_eta2(
-                h=h[:, i],
-                h0=float(h0[i]),
-                nu0=vol.sigma_eta_prior_nu0,
-                s0=vol.sigma_eta_prior_s0,
-                rng=rng,
-            )
+            if ar1:
+                if gamma0 is None or phi is None:
+                    raise RuntimeError("AR(1) volatility state missing")
+                h[:, i] = sample_h_ar1(
+                    y_star=y_star,
+                    h=h[:, i],
+                    sigma_eta2=float(sigma_eta2[i]),
+                    h0=float(h0[i]),
+                    gamma0=float(gamma0[i]),
+                    phi=float(phi[i]),
+                    rng=rng,
+                )
+                h0[i] = sample_h0_ar1(
+                    h1=float(h[0, i]),
+                    sigma_eta2=float(sigma_eta2[i]),
+                    gamma0=float(gamma0[i]),
+                    phi=float(phi[i]),
+                    prior_mean=vol.h0_prior_mean,
+                    prior_var=vol.h0_prior_var,
+                    rng=rng,
+                )
+                g0_i, phi_i = sample_ar1_params(
+                    h=h[:, i],
+                    h0=float(h0[i]),
+                    sigma_eta2=float(sigma_eta2[i]),
+                    phi_prior_mean=float(vol.phi_prior_mean),
+                    phi_prior_var=float(vol.phi_prior_var),
+                    gamma0_prior_mean=float(vol.gamma0_prior_mean),
+                    gamma0_prior_var=float(vol.gamma0_prior_var),
+                    rng=rng,
+                )
+                gamma0[i] = float(g0_i)
+                phi[i] = float(phi_i)
+                sigma_eta2[i] = sample_sigma_eta2_ar1(
+                    h=h[:, i],
+                    h0=float(h0[i]),
+                    gamma0=float(gamma0[i]),
+                    phi=float(phi[i]),
+                    nu0=vol.sigma_eta_prior_nu0,
+                    s0=vol.sigma_eta_prior_s0,
+                    rng=rng,
+                )
+            else:
+                h[:, i] = sample_h_svrw(
+                    y_star=y_star,
+                    h=h[:, i],
+                    sigma_eta2=float(sigma_eta2[i]),
+                    h0=float(h0[i]),
+                    rng=rng,
+                )
+                h0[i] = sample_h0(
+                    h1=float(h[0, i]),
+                    sigma_eta2=float(sigma_eta2[i]),
+                    prior_mean=vol.h0_prior_mean,
+                    prior_var=vol.h0_prior_var,
+                    rng=rng,
+                )
+                sigma_eta2[i] = sample_sigma_eta2(
+                    h=h[:, i],
+                    h0=float(h0[i]),
+                    nu0=vol.sigma_eta_prior_nu0,
+                    s0=vol.sigma_eta_prior_s0,
+                    rng=rng,
+                )
 
         if prior_family == "blasso":
             if blasso is None or tau is None:
@@ -451,7 +582,13 @@ def _fit_svrw(
                 )
 
         elif prior_family == "dl":
-            if dl_psi is None or dl_vartheta is None or dl_zeta is None or dl_inv_v0 is None or dl is None:
+            if (
+                dl_psi is None
+                or dl_vartheta is None
+                or dl_zeta is None
+                or dl_inv_v0 is None
+                or dl is None
+            ):
                 raise RuntimeError("dl state missing")
             dl_psi, dl_vartheta, dl_zeta, dl_inv_v0 = _dl_update(
                 beta=beta,
@@ -467,12 +604,17 @@ def _fit_svrw(
             h_keep.append(h.copy())
             h0_keep.append(h0.copy())
             sigma_eta2_keep.append(sigma_eta2.copy())
+            if ar1 and gamma0 is not None and phi is not None:
+                gamma0_keep.append(gamma0.copy())
+                phi_keep.append(phi.copy())
             if y_lat_keep is not None:
                 y_lat_keep.append(y_lat.copy())
 
     latent_dataset = None
     if model.elb is not None and model.elb.enabled:
-        latent_dataset = Dataset.from_arrays(values=y_lat, variables=dataset.variables, time_index=dataset.time_index)
+        latent_dataset = Dataset.from_arrays(
+            values=y_lat, variables=dataset.variables, time_index=dataset.time_index
+        )
 
     return FitResult(
         dataset=dataset,
@@ -487,4 +629,6 @@ def _fit_svrw(
         h_draws=np.stack(h_keep) if h_keep else None,
         h0_draws=np.stack(h0_keep) if h0_keep else None,
         sigma_eta2_draws=np.stack(sigma_eta2_keep) if sigma_eta2_keep else None,
+        sv_gamma0_draws=np.stack(gamma0_keep) if gamma0_keep else None,
+        sv_phi_draws=np.stack(phi_keep) if phi_keep else None,
     )

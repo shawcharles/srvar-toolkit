@@ -79,6 +79,7 @@ Complete function and class documentation with type signatures and examples.
 
 getting-started/installation
 getting-started/quickstart
+getting-started/development
 ```
 
 ```{toctree}
@@ -89,6 +90,9 @@ getting-started/quickstart
 user-guide/concepts
 user-guide/glossary
 user-guide/configuration
+user-guide/configuration-reference
+user-guide/model-recipes
+user-guide/evaluation
 user-guide/backtesting
 user-guide/limitations
 FAQ

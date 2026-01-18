@@ -40,7 +40,9 @@ def test_fred_get_series_uses_cache(tmp_path, monkeypatch) -> None:
     def fake_get_fail(*args, **kwargs):
         raise AssertionError("HTTP called despite cache")
 
-    monkeypatch.setitem(__import__("sys").modules, "requests", types.SimpleNamespace(get=fake_get_fail))
+    monkeypatch.setitem(
+        __import__("sys").modules, "requests", types.SimpleNamespace(get=fake_get_fail)
+    )
 
     s2 = fred.get_series("X", api_key="k", cache_dir=tmp_path, use_cache=True)
     assert calls["n"] == 1

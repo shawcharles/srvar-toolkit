@@ -18,7 +18,9 @@ def lag_matrix(y: np.ndarray, p: int) -> np.ndarray:
     return np.concatenate(xlags, axis=1)
 
 
-def design_matrix(y: np.ndarray, p: int, *, include_intercept: bool = True) -> tuple[np.ndarray, np.ndarray]:
+def design_matrix(
+    y: np.ndarray, p: int, *, include_intercept: bool = True
+) -> tuple[np.ndarray, np.ndarray]:
     v = np.asarray(y, dtype=float)
     if v.ndim != 2:
         raise ValueError("y must be a 2D array of shape (T, N)")
@@ -73,7 +75,9 @@ def recover_intercept(*, beta: np.ndarray, mu: np.ndarray, n: int, p: int) -> np
     return (np.eye(int(n), dtype=float) - a_sum) @ m
 
 
-def companion_matrix(beta: np.ndarray, n: int, p: int, *, include_intercept: bool = True) -> np.ndarray:
+def companion_matrix(
+    beta: np.ndarray, n: int, p: int, *, include_intercept: bool = True
+) -> np.ndarray:
     b = np.asarray(beta, dtype=float)
 
     k_expected = (1 if include_intercept else 0) + n * p
@@ -91,7 +95,9 @@ def companion_matrix(beta: np.ndarray, n: int, p: int, *, include_intercept: boo
     return np.concatenate([top, bottom], axis=0)
 
 
-def is_stationary(beta: np.ndarray, n: int, p: int, *, include_intercept: bool = True, tol: float = 1e-10) -> bool:
+def is_stationary(
+    beta: np.ndarray, n: int, p: int, *, include_intercept: bool = True, tol: float = 1e-10
+) -> bool:
     f = companion_matrix(beta, n=n, p=p, include_intercept=include_intercept)
     eigvals = np.linalg.eigvals(f)
     return bool(np.max(np.abs(eigvals)) < (1.0 - tol))

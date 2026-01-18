@@ -1,5 +1,3 @@
-import types
-
 import pandas as pd
 import pytest
 
@@ -43,7 +41,9 @@ def test_validate_fred_series_ids_uses_series_info(monkeypatch) -> None:
             return {"id": series_id}
 
     monkeypatch.setattr(fetch_fred, "_require_fredapi", lambda: FakeFred)
-    monkeypatch.setattr(fetch_fred, "_api_key", lambda api_key=None, api_key_env="FRED_API_KEY": "k")
+    monkeypatch.setattr(
+        fetch_fred, "_api_key", lambda api_key=None, api_key_env="FRED_API_KEY": "k"
+    )
 
     cfg_ok = {"fred": {"series": {"A": "GOOD"}}}
     fetch_fred.validate_fred_series_ids(cfg_ok)
@@ -69,18 +69,27 @@ def test_fetch_fred_dataframe_mocked(monkeypatch) -> None:
             return {"id": series_id}
 
     monkeypatch.setattr(fetch_fred, "_require_fredapi", lambda: FakeFred)
-    monkeypatch.setattr(fetch_fred, "_api_key", lambda api_key=None, api_key_env="FRED_API_KEY": "k")
+    monkeypatch.setattr(
+        fetch_fred, "_api_key", lambda api_key=None, api_key_env="FRED_API_KEY": "k"
+    )
 
     cfg = {
-        "fred": {"series": {"X": {"id": "X", "tcode": 2}}},
-        "processing": {"frequency": "MS", "aggregation": "last", "upsample": "ffill", "dropna": True},
+        "fred": {"series": {"X": {"id": "X", "tcode": 2, "scale": 10.0}}},
+        "processing": {
+            "frequency": "MS",
+            "aggregation": "last",
+            "upsample": "ffill",
+            "dropna": True,
+        },
     }
 
     df, meta = fetch_fred.fetch_fred_dataframe(cfg)
     assert list(df.columns) == ["X"]
     assert meta["source"] == "fred"
     assert meta["series"]["X"]["tcode"] == 2
+    assert meta["series"]["X"]["scale"] == 10.0
     assert df.shape[0] == 5
+    assert float(df["X"].iloc[0]) == 10.0
 
 
 def test_cli_dry_run_prints_plan(monkeypatch, capsys, tmp_path) -> None:
@@ -101,7 +110,11 @@ output:
     # Avoid requiring PyYAML extras in tests; load_config uses it.
     # In this repo, tests already import runner which loads PyYAML via extras,
     # so keep this minimal: monkeypatch load_config to return dict.
-    monkeypatch.setattr(cli, "load_config", lambda p: {"fred": {"series": {"CPI": "CPIAUCSL"}}, "output": {"csv_path": "out.csv"}})
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda p: {"fred": {"series": {"CPI": "CPIAUCSL"}}, "output": {"csv_path": "out.csv"}},
+    )
 
     rc = cli.main(["fetch-fred", str(cfg_path), "--dry-run", "--quiet"])
     assert rc == 0

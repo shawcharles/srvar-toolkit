@@ -1,0 +1,86 @@
+# Carriero et al. (2025) — benchmark linear VAR with SV (15 variables)
+#
+# This is a baseline companion config to:
+#   `config/carriero2025_backtest_15var_shadow.yaml`
+#
+# Run:
+#   srvar backtest config/carriero2025_backtest_15var_linear_sv.yaml --out outputs/carriero2025/15var_linear_sv
+
+data:
+  csv_path: "data/cache/carriero2025_15var.csv"
+  date_column: "date"
+  variables:
+    - EXUSUKx
+    - SP500
+    - HOUST
+    - PCEPI
+    - PPICMM
+    - WPSFD49207
+    - CES0600000008
+    - CES0600000007
+    - PAYEMS
+    - UNRATE
+    - CUMFNS
+    - INDPRO
+    - DPCERA3M086SBEA
+    - RPI
+    - FEDFUNDS
+
+model:
+  p: 12
+  include_intercept: true
+  volatility:
+    enabled: true
+    dynamics: "ar1"
+    covariance: "triangular"
+    q_prior_var: 1.0
+
+prior:
+  family: "niw"
+  method: "minnesota"
+  minnesota:
+    lambda1: 0.22
+    lambda2: 0.52
+    lambda3: 2.0
+    lambda4: 45.45454545
+    own_lag_means: [0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1]
+
+sampler:
+  draws: 2000
+  burn_in: 500
+  thin: 2
+  seed: 123
+
+backtest:
+  mode: "expanding"
+  # Minimum observations at the first origin. With origin_start specified below,
+  # this is mostly a safety/validation floor.
+  min_obs: 13
+  step: 1
+  horizons: [1, 3, 6, 12, 24]
+  draws: 500
+  quantile_levels: [0.1, 0.5, 0.9]
+  origin_start: "2010-01-01"
+  origin_end: "2017-12-01"
+
+evaluation:
+  metrics_table: true
+  elb_censor:
+    enabled: true
+    bound: 0.25
+    variables: ["FEDFUNDS"]
+    censor_realized: true
+    censor_forecasts: true
+  coverage:
+    enabled: true
+    intervals: [0.5, 0.8, 0.9]
+  crps:
+    enabled: true
+  pit:
+    enabled: false
+
+output:
+  out_dir: "outputs/carriero2025/15var_linear_sv"
+  save_plots: false
+  save_forecasts: false
+  store_forecasts_in_memory: false

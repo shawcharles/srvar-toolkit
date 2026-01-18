@@ -4,6 +4,7 @@ import numpy as np
 
 from .rng import gamma_rate, inverse_gaussian
 
+
 def _blasso_v0_from_state(*, tau: np.ndarray) -> np.ndarray:
     t = np.asarray(tau, dtype=float).reshape(-1)
     if t.ndim != 1:

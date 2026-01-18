@@ -6,13 +6,18 @@ from .bvar import posterior_niw, sample_posterior_niw
 from .data.dataset import Dataset
 from .elb import sample_shadow_value
 from .results import FitResult, PosteriorNIW
+from .samplers_blasso import _blasso_update_adaptive, _blasso_update_global, _blasso_v0_from_state
+from .samplers_dl import _dl_sample_beta_sigma, _dl_update
+from .samplers_ssp import (
+    _asum_from_beta,
+    _strip_intercept_niw_blocks,
+    sample_mu_gamma,
+    sample_steady_state_mu,
+)
 from .spec import ModelSpec, PriorSpec, SamplerConfig
 from .ssvs import sample_gamma_rows, v0_diag_from_gamma
 from .var import demean_data, design_matrix
 
-from .samplers_blasso import _blasso_update_adaptive, _blasso_update_global, _blasso_v0_from_state
-from .samplers_dl import _dl_sample_beta_sigma, _dl_update
-from .samplers_ssp import _asum_from_beta, _strip_intercept_niw_blocks, sample_mu_gamma, sample_steady_state_mu
 
 def _fit_no_elb(
     *,
@@ -67,9 +72,13 @@ def _fit_no_elb(
 
             v0_used = v0_ssp
             if prior_family == "niw":
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -90,9 +99,13 @@ def _fit_no_elb(
                 )
                 v0_used = np.diag(v0_diag)
 
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -123,9 +136,13 @@ def _fit_no_elb(
                     raise RuntimeError("blasso state missing")
                 v0_used = _blasso_v0_from_state(tau=tau)
 
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -166,7 +183,9 @@ def _fit_no_elb(
                     dl_psi = np.full(km, float(spec_d.dl_scaler), dtype=float)
                     dl_vartheta = np.full(km, float(spec_d.dl_scaler), dtype=float)
                     dl_zeta = float(spec_d.dl_scaler)
-                    dl_inv_v0 = 1.0 / (dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6)
+                    dl_inv_v0 = 1.0 / (
+                        dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6
+                    )
 
                 if dl_inv_v0 is None:
                     raise RuntimeError("dl state missing")
@@ -180,7 +199,9 @@ def _fit_no_elb(
                     nu0=niw.nu0,
                     rng=rng,
                 )
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
                 if dl_psi is None or dl_vartheta is None or dl_zeta is None:
@@ -273,8 +294,8 @@ def _fit_no_elb(
             rng=rng,
         )
         keep_idx = np.arange(sampler.burn_in, sampler.draws, sampler.thin, dtype=int)
-        beta_keep = beta_all[keep_idx] if keep_idx.size > 0 else None
-        sigma_keep = sigma_all[keep_idx] if keep_idx.size > 0 else None
+        beta_kept = beta_all[keep_idx] if keep_idx.size > 0 else None
+        sigma_kept = sigma_all[keep_idx] if keep_idx.size > 0 else None
 
         return FitResult(
             dataset=dataset,
@@ -282,8 +303,8 @@ def _fit_no_elb(
             prior=prior,
             sampler=sampler,
             posterior=posterior,
-            beta_draws=beta_keep,
-            sigma_draws=sigma_keep,
+            beta_draws=beta_kept,
+            sigma_draws=sigma_kept,
         )
 
     if prior_family == "blasso":
@@ -307,16 +328,18 @@ def _fit_no_elb(
         if model.include_intercept:
             c_mask[0] = True
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        last_posterior: PosteriorNIW | None = None
+        beta_keep = []
+        sigma_keep = []
+        last_posterior = None
 
         for it in range(sampler.draws):
             v0 = _blasso_v0_from_state(tau=tau)
             mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta_draws, sigma_draws = sample_posterior_niw(
+                mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+            )
             beta = beta_draws[0]
             sigma = sigma_draws[0]
 
@@ -378,9 +401,9 @@ def _fit_no_elb(
         zeta = float(spec_d.dl_scaler)
         inv_v0 = 1.0 / (psi * (vartheta * vartheta) * (zeta * zeta) + 1e-6)
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        last_posterior: PosteriorNIW | None = None
+        beta_keep = []
+        sigma_keep = []
+        last_posterior = None
 
         for it in range(sampler.draws):
             beta, sigma = _dl_sample_beta_sigma(
@@ -438,10 +461,10 @@ def _fit_no_elb(
         fixed_mask[0] = True
         gamma[0] = True
 
-    beta_keep: list[np.ndarray] = []
-    sigma_keep: list[np.ndarray] = []
-    gamma_keep: list[np.ndarray] = []
-    last_posterior: PosteriorNIW | None = None
+    beta_keep = []
+    sigma_keep = []
+    gamma_keep = []
+    last_posterior = None
 
     for it in range(sampler.draws):
         v0_diag = v0_diag_from_gamma(
@@ -455,7 +478,9 @@ def _fit_no_elb(
         mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
         last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-        beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+        beta_draws, sigma_draws = sample_posterior_niw(
+            mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+        )
         beta = beta_draws[0]
         sigma = sigma_draws[0]
 
@@ -562,9 +587,13 @@ def _fit_elb_gibbs(
             m0_ssp, v0_ssp = _strip_intercept_niw_blocks(m0=niw.m0, v0=niw.v0, k_no_intercept=k)
 
             if prior_family == "niw":
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -587,7 +616,9 @@ def _fit_elb_gibbs(
 
                 mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0, s0=niw.s0, nu0=niw.nu0)
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -620,7 +651,9 @@ def _fit_elb_gibbs(
 
                 mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0, s0=niw.s0, nu0=niw.nu0)
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
-                beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
@@ -661,7 +694,9 @@ def _fit_elb_gibbs(
                     dl_psi = np.full(km, float(spec_d.dl_scaler), dtype=float)
                     dl_vartheta = np.full(km, float(spec_d.dl_scaler), dtype=float)
                     dl_zeta = float(spec_d.dl_scaler)
-                    dl_inv_v0 = 1.0 / (dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6)
+                    dl_inv_v0 = 1.0 / (
+                        dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6
+                    )
 
                 if dl_inv_v0 is None:
                     raise RuntimeError("dl state missing")
@@ -676,7 +711,9 @@ def _fit_elb_gibbs(
                     rng=rng,
                 )
 
-                mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
+                mn, vn, sn, nun = posterior_niw(
+                    x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
+                )
                 last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
                 if dl_psi is None or dl_vartheta is None or dl_zeta is None:
@@ -775,31 +812,31 @@ def _fit_elb_gibbs(
             mu_gamma_draws=np.stack(mu_gamma_keep) if mu_gamma_keep else None,
         )
 
-    beta_keep: list[np.ndarray] = []
-    sigma_keep: list[np.ndarray] = []
-    y_lat_keep: list[np.ndarray] = []
-    gamma_keep: list[np.ndarray] = []
+    beta_keep = []
+    sigma_keep = []
+    y_lat_keep = []
+    gamma_keep = []
 
     niw = prior.niw
 
-    gamma: np.ndarray | None = None
-    fixed_mask: np.ndarray | None = None
-    spec = prior.ssvs if prior_family == "ssvs" else None
+    gamma = None
+    fixed_mask = None
+    ssvs_spec = prior.ssvs if prior_family == "ssvs" else None
     blasso = prior.blasso if prior_family == "blasso" else None
     dl = prior.dl if prior_family == "dl" else None
 
-    tau: np.ndarray | None = None
-    lambda_: float | None = None
-    lambda_c: float | None = None
-    lambda_L: float | None = None
-    c_mask: np.ndarray | None = None
+    tau = None
+    lambda_ = None
+    lambda_c = None
+    lambda_L = None
+    c_mask = None
 
-    dl_psi: np.ndarray | None = None
-    dl_vartheta: np.ndarray | None = None
-    dl_zeta: float | None = None
-    dl_inv_v0: np.ndarray | None = None
+    dl_psi = None
+    dl_vartheta = None
+    dl_zeta = None
+    dl_inv_v0 = None
 
-    last_posterior: PosteriorNIW | None = None
+    last_posterior = None
 
     for it in range(sampler.draws):
         x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
@@ -808,11 +845,13 @@ def _fit_elb_gibbs(
             mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta_draws, sigma_draws = sample_posterior_niw(
+                mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+            )
             beta = beta_draws[0]
             sigma = sigma_draws[0]
         elif prior_family == "ssvs":
-            if spec is None:
+            if ssvs_spec is None:
                 raise ValueError("prior.family='ssvs' requires prior.ssvs")
 
             t_eff, k = x.shape
@@ -823,24 +862,26 @@ def _fit_elb_gibbs(
                 raise ValueError("ssvs requires prior.niw.s0 with shape (N, N)")
 
             if gamma is None:
-                gamma = rng.uniform(size=k) < spec.inclusion_prob
+                gamma = rng.uniform(size=k) < ssvs_spec.inclusion_prob
                 fixed_mask = np.zeros(k, dtype=bool)
-                if model.include_intercept and spec.fix_intercept:
+                if model.include_intercept and ssvs_spec.fix_intercept:
                     fixed_mask[0] = True
                     gamma[0] = True
 
             v0_diag = v0_diag_from_gamma(
                 gamma=gamma,
-                spike_var=spec.spike_var,
-                slab_var=spec.slab_var,
-                intercept_slab_var=spec.intercept_slab_var,
+                spike_var=ssvs_spec.spike_var,
+                slab_var=ssvs_spec.slab_var,
+                intercept_slab_var=ssvs_spec.intercept_slab_var,
             )
             v0 = np.diag(v0_diag)
 
             mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta_draws, sigma_draws = sample_posterior_niw(
+                mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+            )
             beta = beta_draws[0]
             sigma = sigma_draws[0]
 
@@ -848,9 +889,9 @@ def _fit_elb_gibbs(
                 beta=beta,
                 sigma=sigma,
                 gamma=gamma,
-                spike_var=spec.spike_var,
-                slab_var=spec.slab_var,
-                inclusion_prob=spec.inclusion_prob,
+                spike_var=ssvs_spec.spike_var,
+                slab_var=ssvs_spec.slab_var,
+                inclusion_prob=ssvs_spec.inclusion_prob,
                 fixed_mask=fixed_mask,
                 rng=rng,
             )
@@ -871,7 +912,9 @@ def _fit_elb_gibbs(
                 dl_psi = np.full(km, float(dl.dl_scaler), dtype=float)
                 dl_vartheta = np.full(km, float(dl.dl_scaler), dtype=float)
                 dl_zeta = float(dl.dl_scaler)
-                dl_inv_v0 = 1.0 / (dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6)
+                dl_inv_v0 = 1.0 / (
+                    dl_psi * (dl_vartheta * dl_vartheta) * (dl_zeta * dl_zeta) + 1e-6
+                )
 
             if dl_inv_v0 is None:
                 raise RuntimeError("dl state missing")
@@ -924,7 +967,9 @@ def _fit_elb_gibbs(
             mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
-            beta_draws, sigma_draws = sample_posterior_niw(mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng)
+            beta_draws, sigma_draws = sample_posterior_niw(
+                mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+            )
             beta = beta_draws[0]
             sigma = sigma_draws[0]
 

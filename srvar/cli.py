@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import shutil
 import sys
-from typing import Any
-
-from .runner import ConfigError, backtest_from_config, load_config, run_from_config
-from .data.fetch_fred import fetch_fred_to_csv, plan_fetch_fred, validate_fred_series_ids
+from pathlib import Path
+from typing import Any, Literal, cast
 
 from . import __version__
+from .data.fetch_fred import fetch_fred_to_csv, plan_fetch_fred, validate_fred_series_ids
+from .runner import ConfigError, backtest_from_config, load_config, run_from_config
 
 
 def _human_bytes(n: int) -> str:
@@ -84,7 +83,7 @@ class _Reporter:
                 train_T = payload.get("train_T")
                 elapsed_s = float(payload.get("elapsed_s", 0.0))
                 print(
-                    f"{self._dim('  ->')} origin {i+1}/{k}: end={origin_end}  train_T={train_T} {self._dim(f'({elapsed_s:.3f}s)')}"
+                    f"{self._dim('  ->')} origin {i + 1}/{k}: end={origin_end}  train_T={train_T} {self._dim(f'({elapsed_s:.3f}s)')}"
                 )
             return
 
@@ -161,8 +160,8 @@ class _Reporter:
             if self._verbose:
                 p = str(payload.get("path"))
                 b = int(payload.get("bytes", 0))
-                k = str(payload.get("kind"))
-                print(f"{self._dim('  ->')} {k}: {p} {self._dim(_human_bytes(b))}")
+                kind_s = str(payload.get("kind"))
+                print(f"{self._dim('  ->')} {kind_s}: {p} {self._dim(_human_bytes(b))}")
             return
 
         if event == "run_end":
@@ -203,7 +202,9 @@ class _Reporter:
                     file_s2 = file_s
                     if len(file_s2) > w_file:
                         file_s2 = "…" + file_s2[-(w_file - 1) :]
-                    print(f"  {kind.ljust(w_kind)}  {file_s2.ljust(w_file)}  {size_s.rjust(w_size)}")
+                    print(
+                        f"  {kind.ljust(w_kind)}  {file_s2.ljust(w_file)}  {size_s.rjust(w_size)}"
+                    )
             return
 
         if event == "validate_end":
@@ -228,7 +229,7 @@ class _Reporter:
             if self._artifacts:
                 print(self._b("Artifacts:"))
                 out_dir_res = self._out_dir.resolve() if self._out_dir is not None else None
-                rows: list[tuple[str, str, str]] = []
+                rows = []
                 for a in self._artifacts:
                     kind = str(a.get("kind", ""))
                     path_s = str(a.get("path", ""))
@@ -252,7 +253,9 @@ class _Reporter:
                     file_s2 = file_s
                     if len(file_s2) > w_file:
                         file_s2 = "…" + file_s2[-(w_file - 1) :]
-                    print(f"  {kind.ljust(w_kind)}  {file_s2.ljust(w_file)}  {size_s.rjust(w_size)}")
+                    print(
+                        f"  {kind.ljust(w_kind)}  {file_s2.ljust(w_file)}  {size_s.rjust(w_size)}"
+                    )
             return
 
 
@@ -308,7 +311,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show more detailed progress output",
     )
 
-    backtest_p = sub.add_parser("backtest", help="Run a rolling/expanding backtest from a YAML config file")
+    backtest_p = sub.add_parser(
+        "backtest", help="Run a rolling/expanding backtest from a YAML config file"
+    )
     backtest_p.add_argument("config", type=str, help="Path to config.yml")
     backtest_p.add_argument(
         "--out",
@@ -370,6 +375,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show more detailed progress output",
     )
+
+    cmp_p = sub.add_parser(
+        "compare-metrics", help="Compare backtest metrics CSVs (baseline vs candidate)"
+    )
+    cmp_p.add_argument("baseline", type=str, help="Path to baseline metrics.csv")
+    cmp_p.add_argument("candidate", type=str, help="Path to candidate metrics.csv")
+    cmp_p.add_argument(
+        "--mode",
+        type=str,
+        default="ratio",
+        choices=["ratio", "diff", "both"],
+        help="Comparison mode (default: ratio)",
+    )
+    cmp_p.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Write output CSV path (default: stdout)",
+    )
     return parser
 
 
@@ -384,16 +408,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "validate":
             reporter = None
             if not args.quiet:
-                reporter = _Reporter(color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose))
+                reporter = _Reporter(
+                    color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose)
+                )
                 reporter.header(command="srvar validate", config=str(args.config))
             run_from_config(args.config, validate_only=True, progress=reporter)
             if not args.quiet:
-                print(f"{reporter._ok('Config OK')}: {args.config}" if reporter is not None else f"srvar: config OK: {args.config}")
+                print(
+                    f"{reporter._ok('Config OK')}: {args.config}"
+                    if reporter is not None
+                    else f"srvar: config OK: {args.config}"
+                )
             return 0
         if args.command == "run":
             reporter = None
             if not args.quiet:
-                reporter = _Reporter(color=_supports_color(args.no_color), verbose=bool(args.verbose))
+                reporter = _Reporter(
+                    color=_supports_color(args.no_color), verbose=bool(args.verbose)
+                )
                 reporter.header(command="srvar run", config=str(args.config))
 
             run_from_config(args.config, out_dir=args.out, validate_only=False, progress=reporter)
@@ -401,7 +433,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "backtest":
             reporter = None
             if not args.quiet:
-                reporter = _Reporter(color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose))
+                reporter = _Reporter(
+                    color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose)
+                )
                 reporter.header(command="srvar backtest", config=str(args.config))
 
             backtest_from_config(args.config, out_dir=args.out, progress=reporter)
@@ -409,7 +443,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "fetch-fred":
             reporter = None
             if not args.quiet:
-                reporter = _Reporter(color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose))
+                reporter = _Reporter(
+                    color=_supports_color(bool(args.no_color)), verbose=bool(args.verbose)
+                )
                 reporter.header(command="srvar fetch-fred", config=str(args.config))
 
             cfg = load_config(args.config)
@@ -429,7 +465,9 @@ def main(argv: list[str] | None = None) -> int:
                 if reporter is not None:
                     print(f"{reporter._ok('[OK]')} {reporter._b('series ids validated')}")
 
-            out_csv, meta_path, df = fetch_fred_to_csv(cfg, out_csv=args.out, overwrite=bool(args.overwrite))
+            out_csv, meta_path, df = fetch_fred_to_csv(
+                cfg, out_csv=args.out, overwrite=bool(args.overwrite)
+            )
 
             if reporter is not None:
                 print(
@@ -437,6 +475,19 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(f"{reporter._b('  wrote')}:   csv={out_csv}")
                 print(f"{reporter._b('  wrote')}:   meta={meta_path}")
+            return 0
+        if args.command == "compare-metrics":
+            from .compare import compare_metrics_csv
+
+            mode = cast(Literal["ratio", "diff", "both"], str(args.mode))
+            df = compare_metrics_csv(args.baseline, args.candidate, mode=mode)
+            if args.out is None:
+                sys.stdout.write(df.to_csv(index=False))
+                return 0
+
+            out_p = Path(str(args.out))
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(df.to_csv(index=False), encoding="utf-8")
             return 0
         raise ValueError(f"unknown command: {args.command}")
     except ConfigError as e:

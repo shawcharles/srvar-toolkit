@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
-from .results import FitResult, ForecastResult
 from .metrics import crps_draws
+from .results import FitResult, ForecastResult
 from .theme import (
     DEFAULT_THEME,
     Theme,
@@ -143,7 +144,7 @@ def plot_forecast_coverage(
     forecasts: list[ForecastResult],
     y_true: np.ndarray,
     *,
-    intervals: list[float] = [0.5, 0.8, 0.9],
+    intervals: list[float] | None = None,
     horizons: list[int] | None = None,
     var: str | None = None,
     ax: Any | None = None,
@@ -193,6 +194,8 @@ def plot_forecast_coverage(
             var_idx = int(forecasts[0].variables.index(var))
             title = f"Forecast coverage: {var}"
 
+        if intervals is None:
+            intervals = [0.5, 0.8, 0.9]
         intervals_f = [float(c) for c in intervals]
         for c in intervals_f:
             if not np.isfinite(c) or not (0.0 < c < 1.0):
@@ -228,7 +231,9 @@ def plot_forecast_coverage(
             fig = ax.figure
 
         for _j, c in enumerate(sorted(cov_by_int.keys())):
-            ax.plot(x, cov_by_int[c], lw=get_linewidth("median", theme), label=f"{int(round(100*c))}%")
+            ax.plot(
+                x, cov_by_int[c], lw=get_linewidth("median", theme), label=f"{int(round(100 * c))}%"
+            )
 
         ax.set_ylim(0.0, 1.0)
         ax.set_xlabel("Horizon")
@@ -378,7 +383,7 @@ def plot_crps_by_horizon(
                     crps_h[hh] += crps_draws(y, sims[:, h, var_idx])
                     counts_h[hh] += 1
 
-        crps_h = np.where(counts_h > 0, crps_h / np.maximum(counts_h, 1), np.nan)
+        crps_mean = np.where(counts_h > 0, crps_h / np.maximum(counts_h, 1), np.nan)
 
         x = np.asarray(h_list, dtype=int)
         if ax is None:
@@ -386,7 +391,7 @@ def plot_crps_by_horizon(
         else:
             fig = ax.figure
 
-        ax.plot(x, crps_h, lw=get_linewidth("median", theme), color=get_color("crps", theme))
+        ax.plot(x, crps_mean, lw=get_linewidth("median", theme), color=get_color("crps", theme))
         ax.set_xlabel("Horizon")
         ax.set_ylabel("CRPS")
         ax.set_title(title)
@@ -452,7 +457,11 @@ def plot_forecast_fanchart(
             x, lo, hi, color=get_color("forecast", theme), alpha=get_alpha("band", theme), lw=0
         )
         ax.plot(
-            x, med, color=get_color("forecast", theme), lw=get_linewidth("median", theme), label="Median"
+            x,
+            med,
+            color=get_color("forecast", theme),
+            lw=get_linewidth("median", theme),
+            label="Median",
         )
 
         ax.set_title(f"Forecast fan chart: {var}")
@@ -521,7 +530,11 @@ def plot_volatility(
             x, lo, hi, color=get_color("volatility", theme), alpha=get_alpha("band", theme), lw=0
         )
         ax.plot(
-            x, med, color=get_color("volatility", theme), lw=get_linewidth("median", theme), label="Median"
+            x,
+            med,
+            color=get_color("volatility", theme),
+            lw=get_linewidth("median", theme),
+            label="Median",
         )
 
         ax.set_title(f"Stochastic volatility (std dev): {var}")

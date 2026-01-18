@@ -8,7 +8,7 @@ from srvar.spec import ModelSpec, PriorSpec, SamplerConfig
 def _toy_dataset(*, t: int = 60, n: int = 2, seed: int = 0) -> Dataset:
     rng = np.random.default_rng(seed)
     y = rng.standard_normal((t, n))
-    return Dataset.from_arrays(values=y, variables=[f"y{i+1}" for i in range(n)])
+    return Dataset.from_arrays(values=y, variables=[f"y{i + 1}" for i in range(n)])
 
 
 def test_blasso_global_runs_and_shrinks_vs_niw() -> None:

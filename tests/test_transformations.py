@@ -17,10 +17,12 @@ def test_transform_1d_diff() -> None:
 
 
 def test_transform_matrix_aligns_lengths() -> None:
-    x = np.column_stack([
-        np.array([1.0, 2.0, 3.0, 4.0]),
-        np.array([10.0, 20.0, 40.0, 80.0]),
-    ])
+    x = np.column_stack(
+        [
+            np.array([1.0, 2.0, 3.0, 4.0]),
+            np.array([10.0, 20.0, 40.0, 80.0]),
+        ]
+    )
     y = transform_matrix(x, ["level", "diff"])
     assert y.shape == (3, 2)
 

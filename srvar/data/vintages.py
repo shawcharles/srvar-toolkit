@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import warnings
+from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from .dataset import Dataset
-
 
 _QUARTER_RE = re.compile(r"^\s*(\d{4})\s*[ -]?Q([1-4])\s*$", flags=re.IGNORECASE)
 
@@ -113,10 +111,14 @@ def dataset_from_vintage(
     if vintage is not None:
         df = df.loc[:vintage]
 
-    return Dataset.from_arrays(values=df.to_numpy(dtype=float), variables=variables, time_index=df.index)
+    return Dataset.from_arrays(
+        values=df.to_numpy(dtype=float), variables=variables, time_index=df.index
+    )
 
 
-def slice_to_common_history(vintages: dict[pd.Period, pd.DataFrame], *, variables: list[str]) -> dict[pd.Period, Dataset]:
+def slice_to_common_history(
+    vintages: dict[pd.Period, pd.DataFrame], *, variables: list[str]
+) -> dict[pd.Period, Dataset]:
     out: dict[pd.Period, Dataset] = {}
     for v, df in vintages.items():
         out[v] = dataset_from_vintage(vintage_df=df, variables=variables, vintage=v)

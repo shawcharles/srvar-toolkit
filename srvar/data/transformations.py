@@ -89,7 +89,9 @@ def tcode_1d(x: np.ndarray, tcode: int | float, *, var_name: str | None = None) 
     raise ValueError(f"unknown tcode: {tcode}")
 
 
-def tcode_matrix(x: np.ndarray, tcodes: list[int | float], *, var_names: list[str] | None = None) -> np.ndarray:
+def tcode_matrix(
+    x: np.ndarray, tcodes: list[int | float], *, var_names: list[str] | None = None
+) -> np.ndarray:
     v = np.asarray(x, dtype=float)
     if v.ndim != 2:
         raise ValueError("x must be a 2D array")

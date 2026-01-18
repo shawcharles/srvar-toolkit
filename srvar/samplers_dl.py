@@ -6,6 +6,7 @@ import scipy.linalg
 from .linalg import cholesky_jitter, solve_psd, symmetrize
 from .rng import gamma_rate, gig_rvs, inverse_gaussian
 
+
 def _dl_update(
     *,
     beta: np.ndarray,
@@ -133,12 +134,16 @@ def _dl_sample_beta_sigma(
         sig2[i] = float(s0t[i, i])
 
         # jitter stabilizes the precision matrix when inv_diag contains extreme values.
-        ktheta = symmetrize(np.diag(inv_diag) + (xtx / max(sig2[i], 1e-12)) + jitter * np.eye(k, dtype=float))
+        ktheta = symmetrize(
+            np.diag(inv_diag) + (xtx / max(sig2[i], 1e-12)) + jitter * np.eye(k, dtype=float)
+        )
         rhs = inv_diag * m0t[:, i] + (xt.T @ yt[:, i]) / max(sig2[i], 1e-12)
         thetahat = solve_psd(ktheta, rhs)
-        l = cholesky_jitter(ktheta)
+        chol = cholesky_jitter(ktheta)
         z = rng.standard_normal(k)
-        beta[:, i] = thetahat + scipy.linalg.solve_triangular(l.T, z, lower=False, check_finite=False)
+        beta[:, i] = thetahat + scipy.linalg.solve_triangular(
+            chol.T, z, lower=False, check_finite=False
+        )
 
     resid = yt - xt @ beta
     for i in range(n):
@@ -192,8 +197,8 @@ def _dl_sample_beta_svrw(
         ktheta = symmetrize(xtwx + np.diag(inv_diag) + jitter * np.eye(k, dtype=float))
         rhs = inv_diag * m0t[:, i] + xt.T @ (w * yt[:, i])
         thetahat = solve_psd(ktheta, rhs)
-        l = cholesky_jitter(ktheta)
+        chol = cholesky_jitter(ktheta)
         z = rng.standard_normal(k)
-        theta = thetahat + scipy.linalg.solve_triangular(l.T, z, lower=False, check_finite=False)
+        theta = thetahat + scipy.linalg.solve_triangular(chol.T, z, lower=False, check_finite=False)
         beta[:, i] = theta
     return beta

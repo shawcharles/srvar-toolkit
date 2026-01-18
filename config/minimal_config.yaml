@@ -20,6 +20,11 @@ sampler:
 forecast:
   horizons: [1, 4, 8, 12]
 
+  # Optional: enforce stationarity of VAR dynamics during forecast simulation.
+  # stationarity: "allow"          # "allow" (default) or "reject"
+  # stationarity_tol: 1.0e-10      # require max(abs(eigvals)) < 1 - tol
+  # stationarity_max_draws: null   # NIW posterior sampling only (default: 50 * draws)
+
 output:
   out_dir: "outputs/run"
   save_plots: false

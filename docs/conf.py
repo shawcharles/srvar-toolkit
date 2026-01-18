@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import sys
 
-
 sys.path.insert(0, os.path.abspath(".."))
 
 project = "srvar-toolkit"
@@ -54,11 +53,19 @@ html_theme = "furo"
 
 html_static_path = ["_static"]
 
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-    "numpy": ("https://numpy.org/doc/stable/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
-}
+_enable_intersphinx = os.environ.get("SRVAR_DOCS_INTERSPHINX") == "1" or os.environ.get("READTHEDOCS") == "True"
+
+# Intersphinx is useful for cross-linking to NumPy/SciPy/Python docs, but it requires network
+# access to download inventories. Default to offline-safe docs builds unless explicitly enabled.
+intersphinx_mapping = (
+    {
+        "python": ("https://docs.python.org/3", None),
+        "numpy": ("https://numpy.org/doc/stable/", None),
+        "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    }
+    if _enable_intersphinx
+    else {}
+)
 
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True

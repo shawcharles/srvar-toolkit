@@ -26,7 +26,9 @@ def cholesky_jitter(a: np.ndarray, *, jitter: float = 1e-10, max_tries: int = 6)
     raise np.linalg.LinAlgError("cholesky failed even after adding jitter")
 
 
-def solve_psd(a: np.ndarray, b: np.ndarray, *, jitter: float = 1e-10, max_tries: int = 6) -> np.ndarray:
+def solve_psd(
+    a: np.ndarray, b: np.ndarray, *, jitter: float = 1e-10, max_tries: int = 6
+) -> np.ndarray:
     x = symmetrize(np.asarray(a, dtype=float))
     if x.ndim != 2 or x.shape[0] != x.shape[1]:
         raise ValueError("a must be a square 2D array")

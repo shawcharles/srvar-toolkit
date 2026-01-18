@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 
 import numpy as np
 import scipy.stats
@@ -30,6 +29,7 @@ class ElbSpec:
     enabled:
         Whether to enable ELB handling.
     """
+
     bound: float
     applies_to: list[str] = field(default_factory=list)
     tol: float = 1e-8
@@ -75,7 +75,6 @@ def apply_elb_floor(values: np.ndarray, *, bound: float, indices: list[int]) -> 
 
 
 def _x_row(y: np.ndarray, *, t: int, p: int, include_intercept: bool) -> np.ndarray:
-    n = y.shape[1]
     parts: list[np.ndarray] = []
     if include_intercept:
         parts.append(np.array([1.0], dtype=float))
@@ -236,6 +235,95 @@ def sample_shadow_value_svrw(
             r_base = float(y[s, i] - mu_s[i] + d * y_curr)
             a += w * d * d
             b += w * d * r_base
+
+    if a <= 0.0 or not np.isfinite(a):
+        raise RuntimeError("non-positive or invalid conditional precision")
+
+    var = 1.0 / a
+    mean = b / a
+    return truncnorm_rvs_upper(mean=mean, sd=float(np.sqrt(var)), upper=upper, rng=rng)
+
+
+def sample_shadow_value_svcov(
+    *,
+    y: np.ndarray,
+    h: np.ndarray,
+    q: np.ndarray,
+    t: int,
+    j: int,
+    p: int,
+    beta: np.ndarray,
+    upper: float,
+    include_intercept: bool,
+    rng: np.random.Generator,
+) -> float:
+    """Sample y[t, j] from its full conditional under triangular SV covariance.
+
+    This is the ELB shadow-rate update for a VAR(p) with stochastic volatility where the
+    reduced-form residual covariance is:
+
+        Sigma_t = Q^{-1} diag(exp(h_t)) (Q^{-1})'
+
+    with Q upper-triangular and ones on the diagonal.
+    """
+    y = np.asarray(y, dtype=float)
+    ht = np.asarray(h, dtype=float)
+    qt = np.asarray(q, dtype=float)
+    beta = np.asarray(beta, dtype=float)
+
+    t_max, n = y.shape
+    if ht.shape != y.shape:
+        raise ValueError("h must have the same shape as y")
+    if qt.shape != (n, n):
+        raise ValueError("q must have shape (N, N)")
+    if not (0 <= j < n):
+        raise ValueError("j out of range")
+    if not (0 <= t < t_max):
+        raise ValueError("t out of range")
+    if p < 1:
+        raise ValueError("p must be >= 1")
+
+    a = 0.0
+    b = 0.0
+
+    s_start = max(p, t)
+    s_end = min(t_max - 1, t + p)
+
+    y_curr = float(y[t, j])
+
+    for s in range(s_start, s_end + 1):
+        x_s = _x_row(y, t=s, p=p, include_intercept=include_intercept)
+        mu_s = x_s @ beta
+
+        inv_lambda = np.exp(-ht[s, :])
+        k_s = qt.T @ (inv_lambda[:, None] * qt)
+
+        if s == t:
+            u = y[s].copy()
+            u[j] = 0.0
+            u = u - mu_s
+
+            sinv_u = k_s @ u
+            a += float(k_s[j, j])
+            b += -float(sinv_u[j])
+            continue
+
+        lag = s - t
+        if not (1 <= lag <= p):
+            continue
+
+        k0 = 1 if include_intercept else 0
+        idx = k0 + (lag - 1) * n + j
+        d = beta[idx, :]
+
+        r_curr = y[s] - mu_s
+        r_base = r_curr + d * y_curr
+
+        sinv_d = k_s @ d
+        sinv_r = k_s @ r_base
+
+        a += float(d @ sinv_d)
+        b += float(d @ sinv_r)
 
     if a <= 0.0 or not np.isfinite(a):
         raise RuntimeError("non-positive or invalid conditional precision")

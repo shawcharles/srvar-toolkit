@@ -11,7 +11,6 @@ import pandas as pd
 
 from .dataset import Dataset
 
-
 _FRED_BASE_URL = "https://api.stlouisfed.org/fred"
 
 
@@ -84,7 +83,7 @@ def _parse_observations(*, series_id: str, payload: dict[str, Any]) -> pd.Series
         if not isinstance(d, str):
             continue
         dates.append(pd.to_datetime(d))
-        if v in (None, "."):
+        if v is None or v == ".":
             vals.append(np.nan)
         else:
             vals.append(float(v))
@@ -235,4 +234,6 @@ def to_dataset(df: pd.DataFrame, *, dropna: bool = True) -> Dataset:
     x = df.copy()
     if dropna:
         x = x.dropna(axis=0, how="any")
-    return Dataset.from_arrays(values=x.to_numpy(dtype=float), variables=list(x.columns), time_index=x.index)
+    return Dataset.from_arrays(
+        values=x.to_numpy(dtype=float), variables=list(x.columns), time_index=x.index
+    )

@@ -4,8 +4,7 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 
 from srvar.elb import apply_elb_floor
-from srvar.var import design_matrix
-from srvar.var import lag_matrix
+from srvar.var import design_matrix, lag_matrix
 
 
 @st.composite

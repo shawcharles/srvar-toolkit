@@ -15,6 +15,7 @@ class PosteriorNIW:
     This is returned in :class:`~srvar.results.FitResult` when the model is
     conjugate and closed-form NIW posterior parameters are available.
     """
+
     mn: np.ndarray  # (K, N)
     vn: np.ndarray  # (K, K)
     sn: np.ndarray  # (N, N)
@@ -34,6 +35,7 @@ class FitResult:
     - SSVS inclusion indicator draws when ``prior.family='ssvs'``
 
     """
+
     dataset: Dataset
     model: ModelSpec
     prior: PriorSpec
@@ -43,9 +45,12 @@ class FitResult:
     latent_draws: np.ndarray | None = None  # (D, T, N)
     beta_draws: np.ndarray | None = None  # (D, K, N)
     sigma_draws: np.ndarray | None = None  # (D, N, N)
+    q_draws: np.ndarray | None = None  # (D, N, N)
     h_draws: np.ndarray | None = None  # (D, T, N)
     h0_draws: np.ndarray | None = None  # (D, N)
     sigma_eta2_draws: np.ndarray | None = None  # (D, N)
+    sv_gamma0_draws: np.ndarray | None = None  # (D, N)
+    sv_phi_draws: np.ndarray | None = None  # (D, N)
     gamma_draws: np.ndarray | None = None  # (D, K)
     mu_draws: np.ndarray | None = None  # (D, N)
     mu_gamma_draws: np.ndarray | None = None  # (D, N)
@@ -53,8 +58,8 @@ class FitResult:
 
 @dataclass(frozen=True, slots=True)
 class ForecastResult:
-    """Output of :func:`srvar.api.forecast`.
-    """
+    """Output of :func:`srvar.api.forecast`."""
+
     variables: list[str]
     horizons: list[int]
     draws: np.ndarray  # (D, H, N)

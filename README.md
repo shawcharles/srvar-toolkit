@@ -186,7 +186,6 @@ python -m pip install -e ".[fred]"
 
 You will also need a FRED API key (set `FRED_API_KEY` in your environment).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
@@ -334,6 +333,8 @@ See:
 - `config/minimal_config.yaml` (minimal runnable)
 - `config/backtest_demo_config.yaml` (comment-rich backtest template)
 - `config/fetch_fred_demo_config.yaml` (comment-rich FRED fetch template)
+- `config/carriero2025_backtest_15var_shadow.yaml` (Carriero et al. 2025: shadow-rate VAR baseline config)
+- `papers/carriero2025forecasting/README.md` (replication harness entrypoint)
 
 #### Backtest config keys (high level)
 
@@ -349,7 +350,9 @@ In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`)
   - `coverage`: empirical interval coverage by horizon
   - `pit`: PIT histograms for calibration checks
   - `crps`: CRPS-by-horizon plot + CRPS in metrics table
+  - `elb_censor`: ELB-censored scoring (floor realized values; optionally floor forecasts)
   - `metrics_table`: write `metrics.csv`
+ - `output.store_forecasts_in_memory`: control whether backtests retain all forecast draws in RAM (required for plots)
 
 #### Backtest artifacts
 
@@ -362,7 +365,7 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - `crps_by_horizon.png`
 - `backtest_summary.json`
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ---
 
@@ -373,7 +376,7 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - [x] Minnesota-style shrinkage priors
 - [x] Stochastic Search Variable Selection (SSVS)
 - [x] Shadow-rate / ELB data augmentation
-- [x] Diagonal stochastic volatility (SVRW)
+- [x] Stochastic volatility (RW/AR1; diagonal/triangular covariance)
 - [x] Combined ELB + SV model
 - [x] Forecasting with fan charts
 - [x] Plotting utilities
@@ -381,11 +384,11 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - [x] Steady-state VAR parameterisation
 - [x] Dirichlet-Laplace prior
 - [ ] Full-covariance stochastic volatility
-- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results
+- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results (starter configs + harness included)
 
 See the [open issues](https://github.com/shawcharles/srvar-toolkit/issues) for a full list of proposed features.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ---
 
@@ -407,8 +410,9 @@ For full contributor guidelines (including docs builds, style, and testing expec
 ### Limitations and performance notes
 
 - This is currently an **alpha** research toolkit.
-- SV is **diagonal** (no time-varying covariances).
+- SV is not “fully general”: diagonal SV and triangular covariance (time-invariant correlations) are supported; fully time-varying correlation dynamics are not.
 - MCMC runtime depends heavily on ``T``, ``N``, and sampler settings (draws/burn-in/thinning).
+- Backtests can stream `metrics.csv` without keeping all forecast draws in RAM (see `output.store_forecasts_in_memory`).
 
 The documentation site contains more detailed guidance and caveats.
 
@@ -431,7 +435,7 @@ ruff check srvar/
 black --check srvar/
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ---
 
@@ -440,7 +444,6 @@ black --check srvar/
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
@@ -487,7 +490,7 @@ If you use **srvar-toolkit** in your research, please cite both the software and
 }
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ---
 

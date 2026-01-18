@@ -5,7 +5,10 @@ import numpy as np
 from .linalg import cholesky_jitter, solve_psd, symmetrize
 from .var import design_matrix
 
-def _strip_intercept_niw_blocks(*, m0: np.ndarray, v0: np.ndarray, k_no_intercept: int) -> tuple[np.ndarray, np.ndarray]:
+
+def _strip_intercept_niw_blocks(
+    *, m0: np.ndarray, v0: np.ndarray, k_no_intercept: int
+) -> tuple[np.ndarray, np.ndarray]:
     m = np.asarray(m0, dtype=float)
     v = np.asarray(v0, dtype=float)
     if m.ndim != 2 or v.ndim != 2:
@@ -81,8 +84,8 @@ def sample_steady_state_mu(
 
     v_post = solve_psd(precision, np.eye(n, dtype=float))
     mu_hat = v_post @ rhs
-    l = cholesky_jitter(symmetrize(v_post))
-    return mu_hat + l @ rng.standard_normal(n)
+    chol = cholesky_jitter(symmetrize(v_post))
+    return mu_hat + chol @ rng.standard_normal(n)
 
 
 def sample_steady_state_mu_svrw(
@@ -137,8 +140,8 @@ def sample_steady_state_mu_svrw(
     precision = symmetrize(precision)
     v_post = solve_psd(precision, np.eye(n, dtype=float))
     mu_hat = v_post @ rhs
-    l = cholesky_jitter(symmetrize(v_post))
-    return mu_hat + l @ rng.standard_normal(n)
+    chol = cholesky_jitter(symmetrize(v_post))
+    return mu_hat + chol @ rng.standard_normal(n)
 
 
 def sample_mu_gamma(
@@ -160,8 +163,12 @@ def sample_mu_gamma(
         raise ValueError("inclusion_prob must be in (0, 1)")
 
     d = m - m0
-    log_p1 = np.log(float(inclusion_prob)) - 0.5 * (np.log(float(slab_var)) + (d * d) / float(slab_var))
-    log_p0 = np.log(1.0 - float(inclusion_prob)) - 0.5 * (np.log(float(spike_var)) + (d * d) / float(spike_var))
+    log_p1 = np.log(float(inclusion_prob)) - 0.5 * (
+        np.log(float(slab_var)) + (d * d) / float(slab_var)
+    )
+    log_p0 = np.log(1.0 - float(inclusion_prob)) - 0.5 * (
+        np.log(float(spike_var)) + (d * d) / float(spike_var)
+    )
     logit = log_p1 - log_p0
 
     out = np.empty_like(m, dtype=bool)

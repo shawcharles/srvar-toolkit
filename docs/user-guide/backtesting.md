@@ -59,7 +59,10 @@ Common keys:
 - `coverage`: empirical interval coverage by horizon
 - `pit`: PIT histograms for selected variables/horizons
 - `crps`: CRPS-by-horizon diagnostic
+- `elb_censor`: ELB-censored evaluation (floor realized values and optionally forecasts)
 - `metrics_table`: if true, writes `metrics.csv`
+
+For details on scoring conventions (ELB censoring, latent-vs-observed scoring, and horizon semantics), see {doc}`evaluation`.
 
 ## Outputs
 
@@ -72,6 +75,60 @@ Backtest artifacts are written under `output.out_dir` (or `--out`):
 - `pit_<var>_h<h>.png`: PIT histograms for selected variables/horizons
 - `crps_by_horizon.png`: CRPS aggregated by horizon
 - `backtest_summary.json`: summary metadata (mode, origins, horizons, elapsed time)
+
+Notes:
+- `metrics.csv` includes horizons `1..max(backtest.horizons)` (even if `backtest.horizons` is sparse).
+
+## ELB-censored evaluation
+
+Some macro forecast evaluations treat interest rates as **censored at an effective lower bound (ELB)** when scoring forecasts (e.g., to match shadow-rate VAR conventions in the literature).
+
+Backtesting supports an **evaluation-time** ELB censoring step via `evaluation.elb_censor`. This is distinct from `model.elb`:
+
+- `model.elb`: affects estimation/forecasting (latent shadow rate + observed floor)
+- `evaluation.elb_censor`: affects *only* how realized values and/or forecast draws are scored
+
+Example:
+
+```yaml
+evaluation:
+  elb_censor:
+    enabled: true
+    bound: 0.25
+    variables: ["FEDFUNDS"]
+    censor_realized: true
+    censor_forecasts: false
+```
+
+Notes:
+
+- When `censor_realized: true`, realized values are replaced by `max(y, bound)` for the selected variables.
+- When `censor_forecasts: true`, forecast draws are floored at `bound` for the selected variables *before* metrics/plots are computed.
+
+## Disabling diagnostics
+
+The `enabled` flags control both **computation** and **outputs**:
+
+- `evaluation.coverage.enabled: false` skips coverage computation and omits `coverage_*` columns/plots.
+- `evaluation.crps.enabled: false` skips CRPS computation and writes `crps=NaN` in `metrics.csv`.
+- `evaluation.pit.enabled: false` skips PIT plots.
+
+## Memory and scaling
+
+Backtests can be memory-intensive if you retain all per-origin forecasts in RAM (especially with many origins, draws, variables, and horizons).
+
+Control retention with:
+
+```yaml
+output:
+  # If true, keeps all per-origin forecasts in memory (required for plots).
+  # If false, metrics are computed in a streaming way (plots not supported yet).
+  store_forecasts_in_memory: false
+```
+
+Recommended patterns:
+- Heavy runs: `save_plots: false` + `store_forecasts_in_memory: false` (fast + memory-light; writes `metrics.csv`).
+- Diagnostic runs: `save_plots: true` + `store_forecasts_in_memory: true` (plots + full retention).
 
 ## Interpreting the diagnostics
 
