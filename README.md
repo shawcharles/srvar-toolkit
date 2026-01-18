@@ -108,6 +108,9 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 | **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
+| **WIS (Weighted Interval Score)** | Draw-based WIS for probabilistic forecast evaluation | `evaluation.wis` (backtest) | Supported |
+| **Model Comparison (DM test)** | Diebold–Mariano test with Newey–West/HAC variance for comparing loss series | `srvar.stats.diebold_mariano_test(...)` | Supported |
+| **Forecast Pooling (Ensembles)** | Combine multiple predictive distributions via weighted mixtures | `srvar.ensemble.pool_forecasts(...)` | Supported |
 | **Replication Harness** | Starter configs + scripts for Carriero et al. (2025) baselines | `papers/carriero2025forecasting/` | Supported |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -374,6 +377,7 @@ In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`)
   - `coverage`: empirical interval coverage by horizon
   - `pit`: PIT histograms for calibration checks
   - `crps`: CRPS-by-horizon plot + CRPS in metrics table
+  - `wis`: weighted interval score (WIS) in metrics table
   - `elb_censor`: ELB-censored scoring (floor realized values; optionally floor forecasts)
   - `metrics_table`: write `metrics.csv`
 - `output.store_forecasts_in_memory`: control whether backtests retain all forecast draws in RAM (required for plots)

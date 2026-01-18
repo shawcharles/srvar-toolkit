@@ -21,6 +21,7 @@ For each variable `j` and horizon `h`, the toolkit reports:
 - `rmse`: root mean squared error of the predictive mean
 - `mae`: mean absolute error of the predictive mean
 - `crps`: mean CRPS over origins (draw-based; `NaN` when disabled)
+- `wis`: mean weighted interval score (WIS) over origins (draw-based; only when enabled)
 - `coverage_<p>`: empirical coverage of the central `p%` interval (only when enabled)
 
 Notes:
@@ -81,6 +82,21 @@ evaluation:
 
 When disabled, the toolkit **skips CRPS computation** and writes `crps=NaN` in `metrics.csv`.
 
+## WIS (weighted interval score)
+
+Enable/disable via:
+
+```yaml
+evaluation:
+  wis:
+    enabled: true
+    intervals: [0.5, 0.8, 0.9]
+    use_latent: false
+```
+
+When enabled, the toolkit writes a `wis` column in `metrics.csv` (mean WIS over origins). When disabled,
+the `wis` column is omitted to keep the default `metrics.csv` schema stable.
+
 ## ELB-censored evaluation (interest-rate scoring)
 
 Many shadow-rate VAR evaluations treat interest rates as **censored at an effective lower bound (ELB)** when scoring forecasts (e.g. to match the “observed rate” convention in the literature).
@@ -138,3 +154,29 @@ output:
 
 This enables **streaming** evaluation for `metrics.csv` (no need to retain all forecasts in RAM). Plots currently require `store_forecasts_in_memory: true`.
 
+## Model comparison (Diebold–Mariano)
+
+For comparing two loss series (e.g., squared errors or CRPS over forecast origins), use:
+
+```python
+from srvar.stats import diebold_mariano_test
+
+res = diebold_mariano_test(loss_model_a, loss_model_b, horizon=12)
+print(res.statistic, res.pvalue)
+```
+
+This uses a Newey–West/HAC variance estimate (default lag `horizon-1`) and an optional
+Harvey–Leybourne–Newbold small-sample correction.
+
+## Forecast combinations (pooling)
+
+For simple forecast combinations (ensembles), you can pool predictive draws across models:
+
+```python
+from srvar.ensemble import pool_forecasts
+
+pooled = pool_forecasts([fc_model_a, fc_model_b], weights=[0.5, 0.5], draws=5000)
+```
+
+This returns a new `ForecastResult` whose predictive distribution is a weighted mixture of the
+input predictive distributions.

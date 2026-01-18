@@ -741,6 +741,28 @@ def build_evaluation_config(
         _get(crps_cfg, "use_latent", default=False), key="evaluation.crps.use_latent"
     )
 
+    wis_cfg = _get(ev_cfg, "wis", default={})
+    if wis_cfg is None:
+        wis_cfg = {}
+    if not isinstance(wis_cfg, dict):
+        raise ConfigError("evaluation.wis must be a mapping")
+    wis_enabled = _as_bool(_get(wis_cfg, "enabled", default=False), key="evaluation.wis.enabled")
+    wis_use_latent = _as_bool(
+        _get(wis_cfg, "use_latent", default=False), key="evaluation.wis.use_latent"
+    )
+    wis_intervals = _get(wis_cfg, "intervals", default=cov_intervals_f)
+    if wis_intervals is None:
+        wis_intervals = cov_intervals_f
+    if not isinstance(wis_intervals, list) or not all(
+        isinstance(v, (float, int, np.floating, np.integer)) for v in wis_intervals
+    ):
+        raise ConfigError("evaluation.wis.intervals must be a list[float]")
+    wis_intervals_f = [float(v) for v in wis_intervals]
+    if wis_enabled:
+        for c in wis_intervals_f:
+            if not np.isfinite(c) or c < 0.0 or c >= 1.0:
+                raise ConfigError("evaluation.wis.intervals must satisfy 0 <= c < 1")
+
     metrics_table = _as_bool(
         _get(ev_cfg, "metrics_table", default=True), key="evaluation.metrics_table"
     )
@@ -759,6 +781,11 @@ def build_evaluation_config(
             "use_latent": pit_use_latent,
         },
         "crps": {"enabled": crps_enabled, "use_latent": crps_use_latent},
+        "wis": {
+            "enabled": wis_enabled,
+            "intervals": wis_intervals_f,
+            "use_latent": wis_use_latent,
+        },
         "elb_censor": {
             "enabled": elb_enabled,
             "bound": elb_bound,

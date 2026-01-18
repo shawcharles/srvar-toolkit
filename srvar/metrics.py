@@ -56,3 +56,52 @@ def rmse(errors: np.ndarray, *, axis: int = 0) -> np.ndarray:
 def mae(errors: np.ndarray, *, axis: int = 0) -> np.ndarray:
     e = np.asarray(errors, dtype=float)
     return np.nanmean(np.abs(e), axis=axis)
+
+
+def wis_draws(y: float, draws: np.ndarray, *, intervals: list[float]) -> float:
+    """Weighted interval score (WIS) from predictive draws.
+
+    Parameters
+    ----------
+    y:
+        Realized scalar value.
+    draws:
+        Predictive draws for the same scalar (any shape; flattened internally).
+    intervals:
+        Central interval coverages in [0, 1). For example, [0.5, 0.8, 0.9].
+
+    Notes
+    -----
+    Uses the common WIS definition:
+
+        WIS = (0.5*|y - m| + Σ_k (α_k/2)*IS_{α_k}(y, l_k, u_k)) / (K + 0.5)
+
+    where m is the median, α_k = 1 - c_k, and [l_k, u_k] is the central (1-α_k) interval.
+    """
+    x = np.asarray(draws, dtype=float).reshape(-1)
+    if x.size < 1:
+        raise ValueError("draws must be non-empty")
+
+    if np.isnan(y) or np.any(np.isnan(x)):
+        return float("nan")
+
+    if any((not np.isfinite(c)) or (c < 0.0) or (c >= 1.0) for c in intervals):
+        raise ValueError("intervals must be finite and satisfy 0 <= c < 1")
+
+    med = float(np.quantile(x, q=0.5))
+    total = 0.5 * float(np.abs(y - med))
+
+    for c in intervals:
+        alpha = 1.0 - float(c)
+        qlo = 0.5 - 0.5 * float(c)
+        qhi = 0.5 + 0.5 * float(c)
+        lo = float(np.quantile(x, q=qlo))
+        hi = float(np.quantile(x, q=qhi))
+
+        total += 0.5 * alpha * (hi - lo)
+        if y < lo:
+            total += lo - y
+        elif y > hi:
+            total += y - hi
+
+    return float(total / (float(len(intervals)) + 0.5))

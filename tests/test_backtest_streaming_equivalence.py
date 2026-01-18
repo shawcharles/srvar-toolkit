@@ -91,6 +91,7 @@ def test_backtest_streaming_matches_in_memory(monkeypatch, tmp_path) -> None:
             "metrics_table": True,
             "coverage": {"enabled": True, "intervals": [0.5, 0.9], "use_latent": False},
             "crps": {"enabled": True, "use_latent": False},
+            "wis": {"enabled": True, "intervals": [0.5, 0.9], "use_latent": False},
             "pit": {"enabled": False},
         },
         "output": {"save_plots": False, "save_forecasts": False},

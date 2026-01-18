@@ -39,6 +39,13 @@ class MetricsAccumulator:
         self._sum_crps = np.zeros((self._max_h, n), dtype=float)
         self._count_crps = np.zeros((self._max_h, n), dtype=int)
 
+        self._wis_enabled = bool(evaluation["wis"]["enabled"])
+        self._wis_intervals = (
+            [float(c) for c in list(evaluation["wis"]["intervals"])] if self._wis_enabled else []
+        )
+        self._sum_wis = np.zeros((self._max_h, n), dtype=float)
+        self._count_wis = np.zeros((self._max_h, n), dtype=int)
+
         self._coverage_enabled = bool(evaluation["coverage"]["enabled"])
         self._coverage_intervals = (
             [float(c) for c in list(evaluation["coverage"]["intervals"])]
@@ -119,6 +126,26 @@ class MetricsAccumulator:
                     self._sum_crps[h, j] += val
                     self._count_crps[h, j] += 1
 
+        if self._wis_enabled:
+            use_latent = bool(self._evaluation["wis"]["use_latent"])
+            sims_all = (
+                np.asarray(forecast.latent_draws, dtype=float)
+                if (use_latent and forecast.latent_draws is not None)
+                else draws
+            )
+            for h in range(self._max_h):
+                for j in range(len(self._variables)):
+                    y = float(yt[h, j])
+                    if np.isnan(y):
+                        continue
+                    val = float(
+                        metrics.wis_draws(y, sims_all[:, h, j], intervals=self._wis_intervals)
+                    )
+                    if np.isnan(val):
+                        continue
+                    self._sum_wis[h, j] += val
+                    self._count_wis[h, j] += 1
+
         if self._coverage_enabled and self._coverage_intervals:
             use_latent = bool(self._evaluation["coverage"]["use_latent"])
             sims_all = (
@@ -154,13 +181,15 @@ class MetricsAccumulator:
                 else:
                     crps = float("nan")
 
-                row: dict[str, Any] = {
-                    "variable": vname,
-                    "horizon": h,
-                    "crps": crps,
-                    "rmse": rmse,
-                    "mae": mae,
-                }
+                row: dict[str, Any] = {"variable": vname, "horizon": h, "crps": crps}
+
+                if self._wis_enabled:
+                    n_wis = int(self._count_wis[h - 1, j])
+                    wis = float("nan") if n_wis < 1 else float(self._sum_wis[h - 1, j] / n_wis)
+                    row["wis"] = wis
+
+                row["rmse"] = rmse
+                row["mae"] = mae
 
                 if self._coverage_enabled and self._coverage_intervals:
                     denom = float(self._origins) if self._origins > 0 else float("nan")
@@ -229,6 +258,7 @@ def compute_metrics_rows(
 
     This intentionally mirrors the existing metrics schema:
     - Always outputs `crps`, `rmse`, `mae` columns (CRPS is NaN if disabled).
+    - Outputs `wis` only when enabled.
     - Coverage columns are only added when enabled.
     """
     yt = np.asarray(y_true, dtype=float)
@@ -244,7 +274,9 @@ def compute_metrics_rows(
 
     coverage_enabled = bool(evaluation["coverage"]["enabled"])
     crps_enabled = bool(evaluation["crps"]["enabled"])
+    wis_enabled = bool(evaluation["wis"]["enabled"])
     intervals = list(evaluation["coverage"]["intervals"]) if coverage_enabled else []
+    wis_intervals = list(evaluation["wis"]["intervals"]) if wis_enabled else []
 
     rows: list[dict[str, Any]] = []
     for j, vname in enumerate(variables):
@@ -253,13 +285,11 @@ def compute_metrics_rows(
             mu = np.asarray([fc.mean[h - 1, j] for fc in forecasts], dtype=float)
             errors = mu - y
 
-            row: dict[str, Any] = {
-                "variable": vname,
-                "horizon": h,
-                "crps": float("nan"),
-                "rmse": float(metrics.rmse(errors, axis=0)),
-                "mae": float(metrics.mae(errors, axis=0)),
-            }
+            row: dict[str, Any] = {"variable": vname, "horizon": h, "crps": float("nan")}
+            if wis_enabled:
+                row["wis"] = float("nan")
+            row["rmse"] = float(metrics.rmse(errors, axis=0))
+            row["mae"] = float(metrics.mae(errors, axis=0))
 
             if crps_enabled:
                 sims_list = [
@@ -282,6 +312,28 @@ def compute_metrics_rows(
                     dtype=float,
                 )
                 row["crps"] = float(np.nanmean(crps_vals))
+
+            if wis_enabled:
+                sims_list = [
+                    (
+                        fc.latent_draws
+                        if (bool(evaluation["wis"]["use_latent"]) and fc.latent_draws is not None)
+                        else fc.draws
+                    )[:, h - 1, j]
+                    for fc in forecasts
+                ]
+                wis_vals = np.asarray(
+                    [
+                        (
+                            float("nan")
+                            if np.isnan(y[i2])
+                            else float(metrics.wis_draws(y[i2], sims, intervals=wis_intervals))
+                        )
+                        for i2, sims in enumerate(sims_list)
+                    ],
+                    dtype=float,
+                )
+                row["wis"] = float(np.nanmean(wis_vals))
 
             if coverage_enabled:
                 for c in intervals:
