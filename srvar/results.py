@@ -81,3 +81,17 @@ class IRFResult:
     quantiles: dict[float, np.ndarray]  # q -> (H, N, N)
     identification: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class FEVDResult:
+    """Forecast error variance decomposition (FEVD) draws and summaries."""
+
+    variables: list[str]
+    shocks: list[str]
+    horizons: list[int]
+    draws: np.ndarray  # (D, H, N, N): response variable × shock share
+    mean: np.ndarray  # (H, N, N)
+    quantiles: dict[float, np.ndarray]  # q -> (H, N, N)
+    identification: str
+    metadata: dict[str, Any] = field(default_factory=dict)

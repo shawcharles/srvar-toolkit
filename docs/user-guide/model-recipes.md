@@ -152,7 +152,24 @@ Notes:
 - `ordering=[...]` changes the recursive identification ordering.
 - For stochastic volatility models, the impact matrix uses the last volatility state in each draw.
 
-## 8) Conditional / scenario forecasting (hard constraints)
+## 8) FEVD (Cholesky)
+
+Compute forecast error variance decompositions from Cholesky-identified posterior draws:
+
+```python
+from srvar.analysis import fevd_cholesky
+
+fevd = fevd_cholesky(
+    fit_res,
+    horizons=[1, 4, 8, 12],  # steps ahead (1-indexed)
+)
+```
+
+Notes:
+- FEVD at horizon `h` uses IRF horizons `0..h-1` (cumulative sum of squared responses).
+- `shock_scale="one_sd"` vs `"unit"` matches `srvar.analysis.irf_cholesky`.
+
+## 9) Conditional / scenario forecasting (hard constraints)
 
 Generate predictive paths conditional on a future path for selected variables:
 

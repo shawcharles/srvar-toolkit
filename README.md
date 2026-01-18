@@ -102,6 +102,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Conditional Forecasting** | Scenario forecasts with hard constraints (linear Gaussian VARs) | `srvar.scenario.conditional_forecast(...)` | Supported |
 | **Stationarity Conditioning** | Optional rejection of unstable VAR draws during forecasting/backtesting | `forecast(..., stationarity="reject")` | Supported |
 | **Structural IRFs (Cholesky)** | Cholesky-identified impulse responses from posterior draws | `srvar.analysis.irf_cholesky(...)` | Supported |
+| **FEVD (Cholesky)** | Forecast error variance decomposition from Cholesky-identified IRFs | `srvar.analysis.fevd_cholesky(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 | **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
