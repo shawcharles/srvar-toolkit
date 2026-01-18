@@ -95,12 +95,15 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | Supported |
 | **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | Supported |
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
-| **Stochastic Volatility** | Diagonal log-volatility random-walk (KSC mixture sampling) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
+| **Stochastic Volatility** | Diagonal SV with RW/AR(1) state dynamics; optional triangular covariance (time-invariant correlations) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
 | **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
+| **Stationarity Conditioning** | Optional rejection of unstable VAR draws during forecasting/backtesting | `forecast(..., stationarity="reject")` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
-| **Backtesting** | Rolling/expanding refit + forecast with evaluation plots + metrics export | `srvar backtest config.yml` | Supported |
+| **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
+| **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
+| **Replication Harness** | Starter configs + scripts for Carriero et al. (2025) baselines | `papers/carriero2025forecasting/` | Supported |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -336,6 +339,21 @@ See:
 - `config/carriero2025_backtest_15var_shadow.yaml` (Carriero et al. 2025: shadow-rate VAR baseline config)
 - `papers/carriero2025forecasting/README.md` (replication harness entrypoint)
 
+### Replication: Carriero et al. (2025)
+
+From the repository root:
+
+```bash
+# Optional deps needed for YAML configs + (optional) FRED fetching
+python -m pip install -e ".[cli,fred]"
+
+# Run the two baseline configs (expects data/cache/carriero2025_15var.csv to exist)
+python papers/carriero2025forecasting/run_replication.py
+
+# Fetch the dataset from FRED first (requires FRED_API_KEY)
+python papers/carriero2025forecasting/run_replication.py --fetch-data
+```
+
 #### Backtest config keys (high level)
 
 In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`), backtesting uses:
@@ -346,13 +364,14 @@ In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`)
   - `step`: origin step size
   - `horizons`: list of horizons to evaluate
   - `draws`, `quantile_levels`: forecast distribution settings
+  - `stationarity`, `stationarity_tol`, `stationarity_max_draws`: optional stationarity conditioning
 - `evaluation`: which metrics/plots to generate
   - `coverage`: empirical interval coverage by horizon
   - `pit`: PIT histograms for calibration checks
   - `crps`: CRPS-by-horizon plot + CRPS in metrics table
   - `elb_censor`: ELB-censored scoring (floor realized values; optionally floor forecasts)
   - `metrics_table`: write `metrics.csv`
- - `output.store_forecasts_in_memory`: control whether backtests retain all forecast draws in RAM (required for plots)
+- `output.store_forecasts_in_memory`: control whether backtests retain all forecast draws in RAM (required for plots)
 
 #### Backtest artifacts
 
@@ -384,7 +403,8 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - [x] Steady-state VAR parameterisation
 - [x] Dirichlet-Laplace prior
 - [ ] Full-covariance stochastic volatility
-- [ ] Replication: Carriero et al. (2025) "Forecasting with shadow rate VARs" baseline results (starter configs + harness included)
+- [x] Replication harness: Carriero et al. (2025) baseline configs + table builder
+- [ ] Replication: match paper tables/figures end-to-end (data and evaluation details)
 
 See the [open issues](https://github.com/shawcharles/srvar-toolkit/issues) for a full list of proposed features.
 
@@ -413,6 +433,7 @@ For full contributor guidelines (including docs builds, style, and testing expec
 - SV is not “fully general”: diagonal SV and triangular covariance (time-invariant correlations) are supported; fully time-varying correlation dynamics are not.
 - MCMC runtime depends heavily on ``T``, ``N``, and sampler settings (draws/burn-in/thinning).
 - Backtests can stream `metrics.csv` without keeping all forecast draws in RAM (see `output.store_forecasts_in_memory`).
+- Stationarity conditioning is implemented as **rejection** of unstable coefficient draws; this can be expensive for weak priors (see `forecast.stationarity_max_draws` / `backtest.stationarity_max_draws`).
 
 The documentation site contains more detailed guidance and caveats.
 
@@ -431,8 +452,8 @@ pre-commit install
 pytest
 
 # Run linting
-ruff check srvar/
-black --check srvar/
+ruff check
+ruff format --check
 ```
 
 
