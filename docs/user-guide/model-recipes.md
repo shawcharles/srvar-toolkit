@@ -134,3 +134,20 @@ output:
 
 This writes `metrics.csv` without retaining per-origin forecast draws in RAM.
 
+## 7) Structural IRFs (Cholesky)
+
+Compute Cholesky-identified impulse responses from posterior draws:
+
+```python
+from srvar.analysis import irf_cholesky
+
+irf = irf_cholesky(
+    fit_res,
+    horizons=24,          # includes horizon 0
+    shock_scale="one_sd", # or "unit" for unit-impact normalization
+)
+```
+
+Notes:
+- `ordering=[...]` changes the recursive identification ordering.
+- For stochastic volatility models, the impact matrix uses the last volatility state in each draw.

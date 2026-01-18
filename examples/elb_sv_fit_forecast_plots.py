@@ -23,7 +23,7 @@ def main() -> None:
 
     rng = np.random.default_rng(args.seed)
 
-    t, n = int(args.t), 2
+    t = int(args.t)
     elb_bound = float(args.elb)
 
     r_lat = np.zeros(t, dtype=float)

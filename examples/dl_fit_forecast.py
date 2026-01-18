@@ -23,7 +23,9 @@ def main() -> None:
     # Dirichlet–Laplace (DL) shrinkage prior
     # - abeta: Dirichlet concentration parameter
     # - dl_scaler: initialization scale for DL latent variables
-    prior = PriorSpec.from_dl(k=k, n=ds.N, include_intercept=model.include_intercept, abeta=0.5, dl_scaler=0.1)
+    prior = PriorSpec.from_dl(
+        k=k, n=ds.N, include_intercept=model.include_intercept, abeta=0.5, dl_scaler=0.1
+    )
 
     sampler = SamplerConfig(draws=600, burn_in=200, thin=2)
 

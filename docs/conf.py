@@ -53,7 +53,9 @@ html_theme = "furo"
 
 html_static_path = ["_static"]
 
-_enable_intersphinx = os.environ.get("SRVAR_DOCS_INTERSPHINX") == "1" or os.environ.get("READTHEDOCS") == "True"
+_enable_intersphinx = (
+    os.environ.get("SRVAR_DOCS_INTERSPHINX") == "1" or os.environ.get("READTHEDOCS") == "True"
+)
 
 # Intersphinx is useful for cross-linking to NumPy/SciPy/Python docs, but it requires network
 # access to download inventories. Default to offline-safe docs builds unless explicitly enabled.

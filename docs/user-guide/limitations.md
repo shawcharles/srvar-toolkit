@@ -5,7 +5,7 @@ This project targets transparency and reproducibility and is currently in an **a
 ## Modeling limitations
 
 - **Stochastic volatility is not “fully general”**: the toolkit supports diagonal SV and a triangular factorization with time-invariant correlations, but it does not currently implement fully time-varying correlation / covariance dynamics.
-- **Reduced-form focus**: the high-level API focuses on reduced-form VAR(p) models with optional ELB, stochastic volatility, and steady-state parameterization. Structural identification tooling (IRFs/FEVD/sign restrictions) is not yet a first-class workflow.
+- **Structural analysis coverage is partial**: reduced-form and Cholesky-identified IRFs are supported via `srvar.analysis`, but FEVD, sign restrictions, and historical decompositions are not yet first-class workflows.
 - **ELB treatment**: ELB handling is implemented via latent shadow-rate augmentation for selected series.
 
 ## Statistical limitations / caveats

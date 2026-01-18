@@ -20,7 +20,6 @@ def main() -> None:
 
     elb_bound = -0.05
     model = ModelSpec(p=2, include_intercept=True, elb=ElbSpec(bound=elb_bound, applies_to=["r"]))
-    k = (1 if model.include_intercept else 0) + ds.N * model.p
     prior = PriorSpec.niw_minnesota(
         p=model.p,
         y=ds.values,

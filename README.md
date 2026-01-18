@@ -100,6 +100,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
 | **Stationarity Conditioning** | Optional rejection of unstable VAR draws during forecasting/backtesting | `forecast(..., stationarity="reject")` | Supported |
+| **Structural IRFs (Cholesky)** | Cholesky-identified impulse responses from posterior draws | `srvar.analysis.irf_cholesky(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 | **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |

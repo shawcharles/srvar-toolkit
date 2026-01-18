@@ -1,7 +1,7 @@
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -35,12 +35,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from srvar import Dataset
 from srvar.api import fit, forecast
-from srvar.elb import ElbSpec
-from srvar.sv import VolatilitySpec
-from srvar.metrics import crps_draws
-from srvar.spec import ModelSpec, PriorSpec, SamplerConfig
 from srvar.data.transformations import tcode_matrix
 from srvar.data.vintages import dataset_from_vintage, load_vintages_from_dir
+from srvar.elb import ElbSpec
+from srvar.metrics import crps_draws
+from srvar.spec import ModelSpec, PriorSpec, SamplerConfig
+from srvar.sv import VolatilitySpec
 
 
 def _period(label: str) -> pd.Period:
@@ -146,7 +146,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=str, default=None)
     ap.add_argument("--seed", type=int, default=2)
-    ap.add_argument("--benchmark", type=str, choices=["minnesota", "minnesota_sv"], default="minnesota")
+    ap.add_argument(
+        "--benchmark", type=str, choices=["minnesota", "minnesota_sv"], default="minnesota"
+    )
     ap.add_argument("--no-rich", action="store_true")
     ap.add_argument("--fit-draws-bench", type=int, default=None)
     ap.add_argument("--fit-burnin-bench", type=int, default=None)
@@ -213,7 +215,9 @@ def main() -> None:
             task_actuals = progress.add_task("Loading actuals", total=len(eval_quarters))
             for q in eval_quarters:
                 if q in vintages:
-                    ds_q = dataset_from_vintage(vintage_df=vintages[q], variables=variables, vintage=q)
+                    ds_q = dataset_from_vintage(
+                        vintage_df=vintages[q], variables=variables, vintage=q
+                    )
                     y_q = tcode_matrix(ds_q.values, tcodes, var_names=variables)
                     actuals[q] = y_q[-1, :].astype(float)
                 progress.advance(task_actuals)
@@ -226,7 +230,6 @@ def main() -> None:
             actuals[q] = y_q[-1, :].astype(float)
 
     horizons = [4, 8, 16, 24]
-    hmax = int(max(horizons))
 
     origins = sorted({q - h for q in actuals for h in horizons if (q - h) in vintages})
     if len(origins) == 0:
@@ -271,9 +274,13 @@ def main() -> None:
                 for origin in origins:
                     progress.update(task_origins, description=f"Forecast origins (last={origin})")
 
-                    ds_o = dataset_from_vintage(vintage_df=vintages[origin], variables=variables, vintage=origin)
+                    ds_o = dataset_from_vintage(
+                        vintage_df=vintages[origin], variables=variables, vintage=origin
+                    )
                     y_o = tcode_matrix(ds_o.values, tcodes, var_names=variables)
-                    ds_o_t = Dataset.from_arrays(values=y_o, variables=variables, time_index=ds_o.time_index)
+                    ds_o_t = Dataset.from_arrays(
+                        values=y_o, variables=variables, time_index=ds_o.time_index
+                    )
                     ds_fit = _trim_after_tcodes(ds_o_t, p=model_bench.p)
 
                     prior = PriorSpec.niw_minnesota(
@@ -297,8 +304,12 @@ def main() -> None:
                     else:
                         fit_burnin_bench = int(args.fit_burnin_bench)
 
-                    sampler_bench = SamplerConfig(draws=fit_draws_bench, burn_in=fit_burnin_bench, thin=1)
-                    sampler_elb = SamplerConfig(draws=int(args.fit_draws_elb), burn_in=int(args.fit_burnin_elb), thin=1)
+                    sampler_bench = SamplerConfig(
+                        draws=fit_draws_bench, burn_in=fit_burnin_bench, thin=1
+                    )
+                    sampler_elb = SamplerConfig(
+                        draws=int(args.fit_draws_elb), burn_in=int(args.fit_burnin_elb), thin=1
+                    )
 
                     t0 = time.perf_counter()
                     fit_bench = fit(
@@ -306,14 +317,18 @@ def main() -> None:
                         model_bench,
                         prior,
                         sampler_bench,
-                        rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=0)),
+                        rng=np.random.default_rng(
+                            _seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=0)
+                        ),
                     )
                     fit_elb = fit(
                         ds_fit,
                         model_elb,
                         prior,
                         sampler_elb,
-                        rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=0)),
+                        rng=np.random.default_rng(
+                            _seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=0)
+                        ),
                     )
                     t_fit += time.perf_counter() - t0
 
@@ -322,13 +337,17 @@ def main() -> None:
                         fit_bench,
                         horizons=horizons,
                         draws=int(args.forecast_draws),
-                        rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=1)),
+                        rng=np.random.default_rng(
+                            _seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=1)
+                        ),
                     )
                     fc_elb = forecast(
                         fit_elb,
                         horizons=horizons,
                         draws=int(args.forecast_draws),
-                        rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=1)),
+                        rng=np.random.default_rng(
+                            _seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=1)
+                        ),
                     )
                     t_fc += time.perf_counter() - t0
 
@@ -350,21 +369,33 @@ def main() -> None:
                         errors["bench"][h].append(y_true - mean_b)
                         errors["elb"][h].append(y_true - mean_e)
 
-                        crps_b = np.array([crps_draws(y_true[j], draws_b[:, j]) for j in range(len(variables))], dtype=float)
-                        crps_e = np.array([crps_draws(y_true[j], draws_e[:, j]) for j in range(len(variables))], dtype=float)
+                        crps_b = np.array(
+                            [crps_draws(y_true[j], draws_b[:, j]) for j in range(len(variables))],
+                            dtype=float,
+                        )
+                        crps_e = np.array(
+                            [crps_draws(y_true[j], draws_e[:, j]) for j in range(len(variables))],
+                            dtype=float,
+                        )
 
                         crps_vals["bench"][h].append(crps_b)
                         crps_vals["elb"][h].append(crps_e)
 
                     progress.advance(task_origins)
             except KeyboardInterrupt:
-                console.print("\n[bold yellow]Interrupted[/bold yellow] — partial results will be summarized from completed origins.")
+                console.print(
+                    "\n[bold yellow]Interrupted[/bold yellow] — partial results will be summarized from completed origins."
+                )
     else:
         origin_iter = _progress(origins, total=len(origins), desc="Forecast origins")
         for origin in origin_iter:
-            ds_o = dataset_from_vintage(vintage_df=vintages[origin], variables=variables, vintage=origin)
+            ds_o = dataset_from_vintage(
+                vintage_df=vintages[origin], variables=variables, vintage=origin
+            )
             y_o = tcode_matrix(ds_o.values, tcodes, var_names=variables)
-            ds_o_t = Dataset.from_arrays(values=y_o, variables=variables, time_index=ds_o.time_index)
+            ds_o_t = Dataset.from_arrays(
+                values=y_o, variables=variables, time_index=ds_o.time_index
+            )
             ds_fit = _trim_after_tcodes(ds_o_t, p=model_bench.p)
 
             prior = PriorSpec.niw_minnesota(
@@ -389,7 +420,9 @@ def main() -> None:
                 fit_burnin_bench = int(args.fit_burnin_bench)
 
             sampler_bench = SamplerConfig(draws=fit_draws_bench, burn_in=fit_burnin_bench, thin=1)
-            sampler_elb = SamplerConfig(draws=int(args.fit_draws_elb), burn_in=int(args.fit_burnin_elb), thin=1)
+            sampler_elb = SamplerConfig(
+                draws=int(args.fit_draws_elb), burn_in=int(args.fit_burnin_elb), thin=1
+            )
 
             t0 = time.perf_counter()
             fit_bench = fit(
@@ -397,14 +430,18 @@ def main() -> None:
                 model_bench,
                 prior,
                 sampler_bench,
-                rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=0)),
+                rng=np.random.default_rng(
+                    _seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=0)
+                ),
             )
             fit_elb = fit(
                 ds_fit,
                 model_elb,
                 prior,
                 sampler_elb,
-                rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=0)),
+                rng=np.random.default_rng(
+                    _seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=0)
+                ),
             )
             t_fit += time.perf_counter() - t0
 
@@ -413,13 +450,17 @@ def main() -> None:
                 fit_bench,
                 horizons=horizons,
                 draws=int(args.forecast_draws),
-                rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=1)),
+                rng=np.random.default_rng(
+                    _seed_for(base_seed=args.seed, model_id=0, origin=origin, stage=1)
+                ),
             )
             fc_elb = forecast(
                 fit_elb,
                 horizons=horizons,
                 draws=int(args.forecast_draws),
-                rng=np.random.default_rng(_seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=1)),
+                rng=np.random.default_rng(
+                    _seed_for(base_seed=args.seed, model_id=1, origin=origin, stage=1)
+                ),
             )
             t_fc += time.perf_counter() - t0
 
@@ -441,13 +482,21 @@ def main() -> None:
                 errors["bench"][h].append(y_true - mean_b)
                 errors["elb"][h].append(y_true - mean_e)
 
-                crps_b = np.array([crps_draws(y_true[j], draws_b[:, j]) for j in range(len(variables))], dtype=float)
-                crps_e = np.array([crps_draws(y_true[j], draws_e[:, j]) for j in range(len(variables))], dtype=float)
+                crps_b = np.array(
+                    [crps_draws(y_true[j], draws_b[:, j]) for j in range(len(variables))],
+                    dtype=float,
+                )
+                crps_e = np.array(
+                    [crps_draws(y_true[j], draws_e[:, j]) for j in range(len(variables))],
+                    dtype=float,
+                )
 
                 crps_vals["bench"][h].append(crps_b)
                 crps_vals["elb"][h].append(crps_e)
 
-    def _summarize(metric_name: str, agg_fn, values: dict[str, dict[int, list[np.ndarray]]]) -> None:
+    def _summarize(
+        metric_name: str, agg_fn, values: dict[str, dict[int, list[np.ndarray]]]
+    ) -> None:
         bench_name = "Minnesota-SV" if use_sv else "Minnesota"
         for sample_name, (s0, s1) in {
             "full": (eval_start, eval_end),
@@ -473,7 +522,13 @@ def main() -> None:
 
             title = metric_name + f" ratio (ELB / {bench_name}) [{sample_name}]"
             if use_rich:
-                _print_rich_ratio_table(console, title=title, variables=variables, horizons=horizons, ratio_mat=ratio_mat)
+                _print_rich_ratio_table(
+                    console,
+                    title=title,
+                    variables=variables,
+                    horizons=horizons,
+                    ratio_mat=ratio_mat,
+                )
                 console.print("")
             else:
                 df = pd.DataFrame(ratio_mat, index=variables, columns=[f"h={h}" for h in horizons])

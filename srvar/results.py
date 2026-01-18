@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -66,3 +67,17 @@ class ForecastResult:
     mean: np.ndarray  # (H, N)
     quantiles: dict[float, np.ndarray]  # q -> (H, N)
     latent_draws: np.ndarray | None = None  # (D, H, N)
+
+
+@dataclass(frozen=True, slots=True)
+class IRFResult:
+    """Impulse response function (IRF) draws and summaries."""
+
+    variables: list[str]
+    shocks: list[str]
+    horizons: list[int]
+    draws: np.ndarray  # (D, H, N, N): response variable × shock
+    mean: np.ndarray  # (H, N, N)
+    quantiles: dict[float, np.ndarray]  # q -> (H, N, N)
+    identification: str
+    metadata: dict[str, Any] = field(default_factory=dict)

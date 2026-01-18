@@ -69,6 +69,7 @@ Complete function and class documentation with type signatures and examples.
 | Bayesian LASSO (BLASSO) | Shrinkage prior for VAR coefficients | ✅ Supported |
 | Steady-State VAR (SSP) | Parameterize intercept via steady-state mean `mu` | ✅ Supported |
 | Forecasting | Posterior predictive simulation | ✅ Supported |
+| Structural IRFs (Cholesky) | Cholesky-identified impulse responses from posterior draws | ✅ Supported |
 
 ---
 
