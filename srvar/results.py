@@ -95,3 +95,23 @@ class FEVDResult:
     quantiles: dict[float, np.ndarray]  # q -> (H, N, N)
     identification: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalDecompositionResult:
+    """Historical decomposition (HD) draws and summaries.
+
+    This decomposes observed (or latent) series into a baseline path plus shock contributions
+    implied by a structural identification scheme.
+    """
+
+    variables: list[str]
+    shocks: list[str]
+    time_index: Any
+    baseline_draws: np.ndarray  # (D, T, N)
+    shock_draws: np.ndarray  # (D, T, N): structural shocks
+    contributions_draws: np.ndarray  # (D, T, N, N): variable × shock contributions
+    mean: np.ndarray  # (T, N, N)
+    quantiles: dict[float, np.ndarray]  # q -> (T, N, N)
+    identification: str
+    metadata: dict[str, Any] = field(default_factory=dict)

@@ -197,7 +197,24 @@ Notes:
 - FEVD at horizon `h` uses IRF horizons `0..h-1` (cumulative sum of squared responses).
 - `shock_scale="one_sd"` vs `"unit"` matches `srvar.analysis.irf_cholesky`.
 
-## 10) Conditional / scenario forecasting (hard constraints)
+## 10) Historical decomposition (Cholesky)
+
+Decompose historical movements into baseline dynamics and structural shock contributions:
+
+```python
+from srvar.analysis import historical_decomposition_cholesky
+
+hd = historical_decomposition_cholesky(
+    fit_res,
+    draws=200,
+)
+```
+
+Notes:
+- The decomposition is computed for dates `t=p..T-1` (the first `p` observations are lag initial conditions).
+- For ELB models, this defaults to using the latent dataset (`fit_res.latent_dataset`) unless `use_latent=False`.
+
+## 11) Conditional / scenario forecasting (hard constraints)
 
 Generate predictive paths conditional on a future path for selected variables:
 

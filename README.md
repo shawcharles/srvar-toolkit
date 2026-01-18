@@ -104,6 +104,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Structural IRFs (Cholesky)** | Cholesky-identified impulse responses from posterior draws | `srvar.analysis.irf_cholesky(...)` | Supported |
 | **Sign-Restricted IRFs** | Structural IRFs via sign-restriction rotations | `srvar.analysis.irf_sign_restricted(...)` | Supported |
 | **FEVD (Cholesky)** | Forecast error variance decomposition from Cholesky-identified IRFs | `srvar.analysis.fevd_cholesky(...)` | Supported |
+| **Historical Decompositions (Cholesky)** | Decompose historical movements into structural shock contributions | `srvar.analysis.historical_decomposition_cholesky(...)` | Supported |
 | **Plotting** | Shadow rate, volatility, and fan chart visualisations | `srvar.plotting` | Supported |
 | **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
