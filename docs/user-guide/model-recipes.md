@@ -152,7 +152,35 @@ Notes:
 - `ordering=[...]` changes the recursive identification ordering.
 - For stochastic volatility models, the impact matrix uses the last volatility state in each draw.
 
-## 8) FEVD (Cholesky)
+## 8) Sign-restricted structural IRFs
+
+Compute sign-restricted structural IRFs by drawing random orthonormal rotations and accepting those
+that satisfy your sign constraints:
+
+```python
+from srvar.analysis import irf_sign_restricted
+
+irf_sr = irf_sign_restricted(
+    fit_res,
+    horizons=24,
+    draws=1000,
+    max_attempts=5000,
+    restrictions={
+        # Shock names are in dict insertion order; shocks not listed are unrestricted.
+        "mp": {
+            "FEDFUNDS": {0: "+", 1: "+", 2: "+"},
+            # Object-style spec supports multi-horizon + cumulative restrictions:
+            "CPI": {"sign": "-", "horizons": [0, 1, 2], "cumulative": False},
+        },
+    },
+)
+```
+
+Notes:
+- `restrictions` horizons are IRF horizons (0 = impact response).
+- Diagnostics (acceptance rates, attempts) are returned in `irf_sr.metadata`.
+
+## 9) FEVD (Cholesky)
 
 Compute forecast error variance decompositions from Cholesky-identified posterior draws:
 
@@ -169,7 +197,7 @@ Notes:
 - FEVD at horizon `h` uses IRF horizons `0..h-1` (cumulative sum of squared responses).
 - `shock_scale="one_sd"` vs `"unit"` matches `srvar.analysis.irf_cholesky`.
 
-## 9) Conditional / scenario forecasting (hard constraints)
+## 10) Conditional / scenario forecasting (hard constraints)
 
 Generate predictive paths conditional on a future path for selected variables:
 

@@ -6,6 +6,7 @@ from typing import Any, Literal
 import numpy as np
 
 from ..bvar import sample_posterior_niw
+from ..identification.sign_restrictions import parse_sign_restrictions, sample_sign_restricted_irf
 from ..linalg import cholesky_jitter
 from ..results import FitResult, IRFResult
 from ..var import is_stationary
@@ -503,5 +504,279 @@ def irf_cholesky(
         mean=mean,
         quantiles=quants,
         identification="cholesky",
+        metadata=metadata,
+    )
+
+
+def irf_sign_restricted(
+    fit: FitResult,
+    *,
+    horizons: int | Sequence[int] = 24,
+    restrictions: dict[str, Any],
+    max_attempts: int = 5000,
+    min_accept: int = 1000,
+    draws: int | None = None,
+    ordering: Sequence[str] | None = None,
+    quantile_levels: list[float] | None = None,
+    stationarity: str = "allow",
+    stationarity_tol: float = 1e-10,
+    stationarity_max_draws: int | None = None,
+    sign_tol: float = 0.0,
+    zero_tol: float = 0.0,
+    rng: np.random.Generator | None = None,
+) -> IRFResult:
+    """Compute sign-restricted structural IRFs using random orthonormal rotations.
+
+    This uses the standard algorithm:
+    1) For each posterior draw, compute reduced-form IRFs and a Cholesky factor `P` of the
+       contemporaneous covariance.
+    2) Draw random orthonormal rotations `Q` (Haar measure) and set the candidate impact matrix
+       `B = P @ Q`.
+    3) Accept the first rotation that satisfies the sign restrictions (within tolerances).
+
+    Restriction schema
+    ------------------
+    `restrictions` is a nested dict:
+
+    - top-level keys are shock names (in dict insertion order; shocks not listed are unrestricted)
+    - second-level keys are variable names
+    - leaf specs are either:
+      - `{horizon: sign, ...}` where `sign` is "+", "-", or "0"
+      - `{"sign": "+", "horizons": [0, 1, 2], "cumulative": false}`
+
+    Horizon conventions
+    -------------------
+    Restriction horizons are IRF horizons (0 = impact response). Output `horizons` follow the same
+    conventions as `irf_cholesky` and may be a full 0..H grid (when `horizons` is an int) or an
+    explicit list.
+
+    Notes
+    -----
+    - `"+"` / `"-"` require `sign * response >= sign_tol`.
+    - `"0"` requires `abs(response) <= zero_tol` and can be infeasible in 1D.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    h_list = _parse_horizons(horizons)
+    q_list = _parse_quantiles(quantile_levels)
+    vars_out, order_idx = _parse_ordering(list(fit.dataset.variables), ordering)
+    st_policy, st_tol, st_max = _parse_stationarity(
+        stationarity=stationarity,
+        stationarity_tol=stationarity_tol,
+        stationarity_max_draws=stationarity_max_draws,
+    )
+
+    if draws is not None:
+        if not isinstance(draws, (int, np.integer)) or isinstance(draws, bool):
+            raise ValueError("draws must be an integer when provided")
+        if int(draws) < 1:
+            raise ValueError("draws must be >= 1")
+        draws_out = int(draws)
+    else:
+        if not isinstance(min_accept, (int, np.integer)) or isinstance(min_accept, bool):
+            raise ValueError("min_accept must be an integer when draws is not provided")
+        if int(min_accept) < 1:
+            raise ValueError("min_accept must be >= 1")
+        draws_out = int(min_accept)
+
+    if not isinstance(max_attempts, (int, np.integer)) or isinstance(max_attempts, bool):
+        raise ValueError("max_attempts must be an integer")
+    if int(max_attempts) < 1:
+        raise ValueError("max_attempts must be >= 1")
+    max_attempts = int(max_attempts)
+
+    n = int(fit.dataset.N)
+    p = int(fit.model.p)
+    if n < 1:
+        raise ValueError("fit.dataset.N must be >= 1")
+
+    shock_names, parsed, has_cum = parse_sign_restrictions(
+        restrictions, variables=vars_out, n_shocks=n
+    )
+    max_restr_h = 0
+    if parsed:
+        max_restr_h = int(max(int(h) for r in parsed for h in r.horizons.reshape(-1)))
+    hmax_internal = int(max(max(h_list), max_restr_h))
+    internal_h = list(range(hmax_internal + 1))
+
+    metadata: dict[str, Any] = {
+        "stationarity": st_policy,
+        "stationarity_tol": float(st_tol),
+        "max_attempts": int(max_attempts),
+        "draws": int(draws_out),
+        "sign_tol": float(sign_tol),
+        "zero_tol": float(zero_tol),
+        "ordering": list(vars_out),
+        "restrictions": [
+            {
+                "shock": shock_names[int(r.shock)],
+                "variable": vars_out[int(r.response)],
+                "horizons": [int(h) for h in r.horizons.reshape(-1)],
+                "sign": int(r.sign),
+                "cumulative": bool(r.cumulative),
+            }
+            for r in parsed
+        ],
+    }
+
+    max_total_draws = int(50 * draws_out if st_max is None else st_max)
+    metadata["max_draw_attempts"] = int(max_total_draws)
+
+    irf_draws = np.empty((draws_out, len(h_list), n, n), dtype=float)
+    rotation_attempts: list[int] = []
+    total_rotations = 0
+    attempted_draws = 0
+    failed_draws = 0
+    last_err: Exception | None = None
+
+    def _compute_red(beta: np.ndarray) -> np.ndarray:
+        a_mats = _ar_matrices_from_beta(
+            beta=beta, n=n, p=p, include_intercept=fit.model.include_intercept
+        )
+        a_mats = [a[np.ix_(order_idx, order_idx)] for a in a_mats]
+        return _reduced_form_irf(a_mats=a_mats, horizons=internal_h)
+
+    if fit.beta_draws is not None:
+        idx_pool = _select_draw_indices(
+            fit=fit, draws=None, stationarity=st_policy, stationarity_tol=st_tol, rng=rng
+        )
+        beta_pool = np.asarray(fit.beta_draws[idx_pool], dtype=float)
+        sigma_pool = (
+            np.asarray(fit.sigma_draws[idx_pool], dtype=float)
+            if fit.sigma_draws is not None
+            else None
+        )
+        h_pool = np.asarray(fit.h_draws[idx_pool], dtype=float) if fit.h_draws is not None else None
+        q_pool = np.asarray(fit.q_draws[idx_pool], dtype=float) if fit.q_draws is not None else None
+        metadata["draw_source"] = "stored"
+
+        accepted = 0
+        while accepted < draws_out and attempted_draws < max_total_draws:
+            attempted_draws += 1
+            pool_i = int(rng.integers(0, int(beta_pool.shape[0])))
+            red = _compute_red(beta_pool[pool_i])
+            sigma0 = _sigma0_from_components(
+                sigma_draws=sigma_pool,
+                h_draws=h_pool,
+                q_draws=q_pool,
+                draw_index=pool_i,
+            )
+            sigma0 = np.asarray(sigma0, dtype=float)[np.ix_(order_idx, order_idx)]
+            impact = cholesky_jitter(sigma0)
+
+            try:
+                theta, _impact_rot, n_rot = sample_sign_restricted_irf(
+                    reduced_irf=red,
+                    impact=impact,
+                    restrictions=parsed,
+                    max_attempts=max_attempts,
+                    rng=rng,
+                    sign_tol=sign_tol,
+                    zero_tol=zero_tol,
+                    has_cumulative=has_cum,
+                )
+            except ValueError as e:
+                failed_draws += 1
+                last_err = e
+                continue
+
+            total_rotations += int(n_rot)
+            rotation_attempts.append(int(n_rot))
+            irf_draws[accepted] = theta[np.asarray(h_list, dtype=int)]
+            accepted += 1
+
+    else:
+        if fit.posterior is None:
+            raise ValueError("fit has no stored beta_draws and no posterior parameters")
+        if fit.model.volatility is not None and fit.model.volatility.enabled:
+            raise ValueError("sign-restricted IRFs require stored beta_draws for volatility models")
+
+        metadata["draw_source"] = "posterior"
+        accepted = 0
+        stationarity_rejects = 0
+        while accepted < draws_out and attempted_draws < max_total_draws:
+            need = int(draws_out - accepted)
+            batch = min(max(10, 2 * need), max_total_draws - attempted_draws)
+            beta_b, sigma_b = sample_posterior_niw(
+                mn=fit.posterior.mn,
+                vn=fit.posterior.vn,
+                sn=fit.posterior.sn,
+                nun=fit.posterior.nun,
+                draws=int(batch),
+                rng=rng,
+            )
+            for i in range(int(batch)):
+                attempted_draws += 1
+                if st_policy == "reject":
+                    if not is_stationary(
+                        beta_b[i],
+                        n=n,
+                        p=p,
+                        include_intercept=fit.model.include_intercept,
+                        tol=st_tol,
+                    ):
+                        stationarity_rejects += 1
+                        continue
+
+                red = _compute_red(beta_b[i])
+                sigma0 = np.asarray(sigma_b[i], dtype=float)[np.ix_(order_idx, order_idx)]
+                impact = cholesky_jitter(sigma0)
+
+                try:
+                    theta, _impact_rot, n_rot = sample_sign_restricted_irf(
+                        reduced_irf=red,
+                        impact=impact,
+                        restrictions=parsed,
+                        max_attempts=max_attempts,
+                        rng=rng,
+                        sign_tol=sign_tol,
+                        zero_tol=zero_tol,
+                        has_cumulative=has_cum,
+                    )
+                except ValueError as e:
+                    failed_draws += 1
+                    last_err = e
+                    continue
+
+                total_rotations += int(n_rot)
+                rotation_attempts.append(int(n_rot))
+                irf_draws[accepted] = theta[np.asarray(h_list, dtype=int)]
+                accepted += 1
+                if accepted == draws_out:
+                    break
+        metadata["stationarity_rejects"] = int(stationarity_rejects)
+
+    if rotation_attempts:
+        metadata["rotation_attempts_mean"] = float(np.mean(rotation_attempts))
+        metadata["rotation_attempts_max"] = int(np.max(rotation_attempts))
+    metadata["attempted_draws"] = int(attempted_draws)
+    metadata["accepted_draws"] = int(len(rotation_attempts))
+    metadata["failed_draws"] = int(failed_draws)
+    metadata["total_rotation_attempts"] = int(total_rotations)
+    metadata["rotation_acceptance_rate"] = (
+        float(len(rotation_attempts) / total_rotations) if total_rotations else float("nan")
+    )
+
+    if len(rotation_attempts) != draws_out:
+        last_msg = f"; last_error={last_err}" if last_err is not None else ""
+        raise ValueError(
+            "could not generate the requested number of sign-restricted IRF draws: "
+            f"accepted={len(rotation_attempts)}, requested={draws_out}, "
+            f"attempted_draws={attempted_draws}, max_draw_attempts={max_total_draws}"
+            f"{last_msg}"
+        )
+
+    mean = irf_draws.mean(axis=0)
+    quants = {q: np.quantile(irf_draws, q=q, axis=0) for q in q_list}
+
+    return IRFResult(
+        variables=list(vars_out),
+        shocks=list(shock_names),
+        horizons=list(h_list),
+        draws=irf_draws,
+        mean=mean,
+        quantiles=quants,
+        identification="sign_restricted",
         metadata=metadata,
     )
