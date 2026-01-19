@@ -23,6 +23,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Full-covariance stochastic volatility via factor SV (`model.volatility.covariance: "factor"`, `k_factors`) with RW dynamics (v1: `prior.family: "niw"`).
 - Optional `xarray` conversion utilities for labeled outputs (`srvar.xarray`).
 - Optional ArviZ conversion utilities for `InferenceData` outputs (`srvar.arviz`).
+- Factor SV demo config (`config/fsv_demo_config.yaml`) and example script (`examples/fsv_fit_forecast.py`).
 - ELB-censored backtest evaluation via `evaluation.elb_censor` (censor realized values and optionally forecast draws).
 - Streaming backtest evaluation for `metrics.csv` via `output.store_forecasts_in_memory` (reduces RAM for long runs).
 - Synthetic memory benchmark script (`scripts/benchmark_backtest_memory.py`).
@@ -37,6 +38,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Fixed
 
 - NIW posterior sampling now correctly handles the univariate case (`N=1`) when drawing from the inverse-Wishart distribution.
+- `srvar.xarray.fit_to_xarray` now handles SV/FSV time-varying draws defined on the effective sample (`T - p`).
 
 ## [0.1.0] - 2025-12-22
 

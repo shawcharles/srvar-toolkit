@@ -38,11 +38,19 @@ def fit_to_xarray(fit: FitResult) -> Any:
 
     Returned variables depend on what the fit contains (e.g., ELB/SV models include
     additional latent/state draws).
+
+    Notes
+    -----
+    Some time-varying draws (e.g., stochastic volatility states, factor SV states)
+    are defined on the effective sample ``T - p``. These are aligned to the full
+    dataset time index; the first ``p`` observations are filled with missing values.
     """
     xr = _require_xarray()
 
     variables = list(fit.dataset.variables)
     time = fit.dataset.time_index
+    p = int(fit.model.p)
+    time_eff = time[p:] if p <= len(time) else time[0:0]
 
     ds = xr.Dataset(
         data_vars={
@@ -54,7 +62,7 @@ def fit_to_xarray(fit: FitResult) -> Any:
         },
         coords={"time": time, "variable": variables},
         attrs={
-            "p": int(fit.model.p),
+            "p": p,
             "include_intercept": bool(fit.model.include_intercept),
         },
     )
@@ -123,7 +131,11 @@ def fit_to_xarray(fit: FitResult) -> Any:
         ds["h"] = xr.DataArray(
             h,
             dims=("draw", "time", "variable"),
-            coords={"draw": np.arange(h.shape[0], dtype=int), "time": time, "variable": variables},
+            coords={
+                "draw": np.arange(h.shape[0], dtype=int),
+                "time": time_eff,
+                "variable": variables,
+            },
         )
 
     if fit.h0_draws is not None:
@@ -180,6 +192,65 @@ def fit_to_xarray(fit: FitResult) -> Any:
             mg,
             dims=("draw", "variable"),
             coords={"draw": np.arange(mg.shape[0], dtype=int), "variable": variables},
+        )
+
+    if fit.lambda_draws is not None:
+        lam = np.asarray(fit.lambda_draws, dtype=float)
+        k = int(lam.shape[2])
+        ds["lambda"] = xr.DataArray(
+            lam,
+            dims=("draw", "variable", "factor"),
+            coords={
+                "draw": np.arange(lam.shape[0], dtype=int),
+                "variable": variables,
+                "factor": np.arange(k, dtype=int),
+            },
+        )
+
+    if fit.factor_draws is not None:
+        f = np.asarray(fit.factor_draws, dtype=float)
+        ds["factors"] = xr.DataArray(
+            f,
+            dims=("draw", "time", "factor"),
+            coords={
+                "draw": np.arange(f.shape[0], dtype=int),
+                "time": time_eff,
+                "factor": np.arange(f.shape[2], dtype=int),
+            },
+        )
+
+    if fit.h_factor_draws is not None:
+        hf = np.asarray(fit.h_factor_draws, dtype=float)
+        ds["h_factor"] = xr.DataArray(
+            hf,
+            dims=("draw", "time", "factor"),
+            coords={
+                "draw": np.arange(hf.shape[0], dtype=int),
+                "time": time_eff,
+                "factor": np.arange(hf.shape[2], dtype=int),
+            },
+        )
+
+    if fit.h0_factor_draws is not None:
+        h0f = np.asarray(fit.h0_factor_draws, dtype=float)
+        ds["h0_factor"] = xr.DataArray(
+            h0f,
+            dims=("draw", "factor"),
+            coords={
+                "draw": np.arange(h0f.shape[0], dtype=int),
+                "factor": np.arange(h0f.shape[1], dtype=int),
+            },
+        )
+
+    if fit.sigma_eta2_factor_draws is not None:
+        se_f = np.asarray(fit.sigma_eta2_factor_draws, dtype=float)
+        ds["sigma_eta2_factor"] = xr.DataArray(
+            se_f,
+            dims=("draw", "factor"),
+            coords={
+                "draw": np.arange(se_f.shape[0], dtype=int),
+                "factor": np.arange(se_f.shape[1], dtype=int),
+            },
         )
 
     return ds
