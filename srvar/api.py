@@ -6,7 +6,7 @@ from .bvar import sample_posterior_niw, simulate_var_forecast
 from .data.dataset import Dataset
 from .elb import apply_elb_floor
 from .results import FitResult, ForecastResult
-from .samplers import _fit_elb_gibbs, _fit_no_elb, _fit_svcov, _fit_svrw
+from .samplers import _fit_elb_gibbs, _fit_fsv, _fit_no_elb, _fit_svcov, _fit_svrw
 from .spec import ModelSpec, PriorSpec, SamplerConfig
 
 
@@ -69,6 +69,14 @@ def fit(
     if rng is None:
         rng = np.random.default_rng()
 
+    if model.shocks is not None and model.shocks.family != "gaussian":
+        if model.elb is not None and model.elb.enabled:
+            raise ValueError("robust shocks are not supported with ELB (model.elb) yet")
+        if model.volatility is not None and model.volatility.enabled:
+            raise ValueError("robust shocks are not supported with stochastic volatility yet")
+        if model.steady_state is not None:
+            raise ValueError("robust shocks are not supported with steady_state yet")
+
     if model.volatility is not None and model.volatility.enabled:
         if prior_family not in {"niw", "blasso", "dl"}:
             raise ValueError(
@@ -78,6 +86,10 @@ def fit(
             if prior_family != "niw":
                 raise ValueError("triangular SV covariance currently requires prior.family='niw'")
             return _fit_svcov(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
+        if model.volatility.covariance == "factor":
+            if prior_family != "niw":
+                raise ValueError("FSV currently requires prior.family='niw'")
+            return _fit_fsv(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
         return _fit_svrw(dataset=dataset, model=model, prior=prior, sampler=sampler, rng=rng)
 
     if model.elb is None or not model.elb.enabled:
@@ -269,6 +281,7 @@ def forecast(
                 horizon=hmax,
                 include_intercept=fit.model.include_intercept,
                 rng=rng,
+                shocks=fit.model.shocks,
             )
     elif (
         fit.beta_draws is not None
@@ -338,6 +351,79 @@ def forecast(
                     )
                 else:
                     h_curr = h_curr + np.sqrt(sig_eta) * rng.normal(size=fit.dataset.N)
+
+            sims[d] = path
+    elif (
+        fit.beta_draws is not None
+        and fit.h_draws is not None
+        and fit.sigma_eta2_draws is not None
+        and fit.lambda_draws is not None
+        and fit.h_factor_draws is not None
+        and fit.sigma_eta2_factor_draws is not None
+    ):
+        idx: np.ndarray
+        if stationarity_l == "reject":
+            from .var import is_stationary
+
+            stable = [
+                is_stationary(
+                    fit.beta_draws[i],
+                    n=fit.dataset.N,
+                    p=p,
+                    include_intercept=fit.model.include_intercept,
+                    tol=stationarity_tol,
+                )
+                for i in range(int(fit.beta_draws.shape[0]))
+            ]
+            stable_idx = np.flatnonzero(np.asarray(stable, dtype=bool))
+            if stable_idx.size < 1:
+                raise ValueError("no stationary coefficient draws available in fit.beta_draws")
+            sel = rng.integers(0, stable_idx.size, size=draws)
+            idx = stable_idx[sel]
+        else:
+            idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
+
+        beta_draws = fit.beta_draws[idx]
+        h_eta_draws = fit.h_draws[idx]
+        sigma_eta2_eta_draws = fit.sigma_eta2_draws[idx]
+        lam_draws = fit.lambda_draws[idx]
+        h_f_draws = fit.h_factor_draws[idx]
+        sigma_eta2_f_draws = fit.sigma_eta2_factor_draws[idx]
+
+        sims = np.empty((draws, hmax, fit.dataset.N), dtype=float)
+        for d in range(draws):
+            lags = y_last.copy()
+            h_eta_curr = h_eta_draws[d, -1, :].copy()
+            sig_eta2_eta = sigma_eta2_eta_draws[d].copy()
+            lam = lam_draws[d]
+
+            h_f_curr = h_f_draws[d, -1, :].copy()
+            sig_eta2_f = sigma_eta2_f_draws[d].copy()
+
+            k = int(h_f_curr.shape[0])
+            path = np.empty((hmax, fit.dataset.N), dtype=float)
+
+            for h_step in range(hmax):
+                x_parts = []
+                if fit.model.include_intercept:
+                    x_parts.append(np.array([1.0], dtype=float))
+                for lag in range(1, p + 1):
+                    x_parts.append(lags[-lag, :])
+                x_row = np.concatenate(x_parts)
+
+                mean = x_row @ beta_draws[d]
+
+                f_step = rng.normal(size=k) * np.exp(0.5 * h_f_curr)
+                eta_step = rng.normal(size=fit.dataset.N) * np.exp(0.5 * h_eta_curr)
+                eps = lam @ f_step + eta_step
+
+                y_next = mean + eps
+                path[h_step] = y_next
+
+                lags = np.vstack([lags[1:, :], y_next]) if p > 1 else y_next.reshape(1, -1)
+
+                h_eta_curr = h_eta_curr + np.sqrt(sig_eta2_eta) * rng.normal(size=fit.dataset.N)
+                h_f_curr = h_f_curr + np.sqrt(sig_eta2_f) * rng.normal(size=k)
 
             sims[d] = path
     elif (
@@ -465,6 +551,7 @@ def forecast(
                 horizon=hmax,
                 include_intercept=fit.model.include_intercept,
                 rng=rng,
+                shocks=fit.model.shocks,
             )
 
     mean = sims.mean(axis=0)

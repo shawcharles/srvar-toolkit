@@ -95,8 +95,9 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | Supported |
 | **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | Supported |
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
-| **Stochastic Volatility** | Diagonal SV with RW/AR(1) state dynamics; optional triangular covariance (time-invariant correlations) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
+| **Stochastic Volatility** | Diagonal SV with RW/AR(1) state dynamics; optional triangular covariance (time-invariant correlations); optional factor SV (full time-varying covariance; v1: NIW+RW) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
+| **Robust Shocks** | Student‑t and outlier-mixture innovations (homoskedastic VARs) | `ModelSpec(shocks=ShockSpec(...))` | Supported |
 | **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
 | **Conditional Forecasting** | Scenario forecasts with hard constraints (linear Gaussian VARs) | `srvar.scenario.conditional_forecast(...)` | Supported |
@@ -109,9 +110,13 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Backtesting** | Rolling/expanding refit + forecast with plots + metrics; optional streaming metrics mode | `srvar backtest config.yml` | Supported |
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
 | **WIS (Weighted Interval Score)** | Draw-based WIS for probabilistic forecast evaluation | `evaluation.wis` (backtest) | Supported |
+| **Pinball Loss (Quantile Score)** | Draw-based pinball (quantile) loss for probabilistic forecast evaluation | `evaluation.pinball` (backtest) | Supported |
+| **Log Score (Gaussian LPD)** | Gaussian approximation log score from predictive draws | `evaluation.log_score` (backtest) | Supported |
 | **Model Comparison (DM test)** | Diebold–Mariano test with Newey–West/HAC variance for comparing loss series | `srvar.stats.diebold_mariano_test(...)` | Supported |
 | **Model Comparison (GW test)** | Giacomini–White conditional predictive ability test (MATLAB-compatible NW covariance) | `srvar.stats.giacomini_white_test(...)` | Supported |
 | **Forecast Pooling (Ensembles)** | Combine multiple predictive distributions via weighted mixtures | `srvar.ensemble.pool_forecasts(...)` | Supported |
+| **Labeled Outputs (`xarray`)** | Convert fit/forecast/IRF/FEVD outputs to labeled `xarray.Dataset` objects | `srvar.xarray.*_to_xarray(...)` | Supported |
+| **Posterior Diagnostics (ArviZ)** | Convert outputs to `arviz.InferenceData` for diagnostics/plotting | `srvar.arviz.*_to_inferencedata(...)` | Supported |
 | **Replication Harness** | Starter configs + scripts for Carriero et al. (2025) baselines | `papers/carriero2025forecasting/` | Supported |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -178,6 +183,12 @@ pip install -e .
 # With plotting support
 pip install -e '.[plot]'
 
+# With labeled xarray outputs
+pip install -e '.[xarray]'
+
+# With ArviZ integration (InferenceData outputs)
+pip install -e '.[arviz]'
+
 # With FRED data fetching
 pip install -e '.[fred]'
 
@@ -185,7 +196,7 @@ pip install -e '.[fred]'
 pip install -e '.[dev]'
 
 # All extras
-pip install -e '.[dev,plot,fred,docs]'
+pip install -e '.[dev,plot,fred,docs,xarray,arviz]'
 ```
 
 Note: `srvar fetch-fred` requires the optional `fred` extra (it depends on `fredapi`).
@@ -379,6 +390,8 @@ In addition to the standard keys (`data`, `model`, `prior`, `sampler`, `output`)
   - `pit`: PIT histograms for calibration checks
   - `crps`: CRPS-by-horizon plot + CRPS in metrics table
   - `wis`: weighted interval score (WIS) in metrics table
+  - `pinball`: pinball (quantile) loss in metrics table
+  - `log_score`: Gaussian log score (log predictive density) in metrics table
   - `elb_censor`: ELB-censored scoring (floor realized values; optionally floor forecasts)
   - `metrics_table`: write `metrics.csv`
 - `output.store_forecasts_in_memory`: control whether backtests retain all forecast draws in RAM (required for plots)
@@ -412,7 +425,7 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 - [x] Bayesian LASSO prior
 - [x] Steady-state VAR parameterisation
 - [x] Dirichlet-Laplace prior
-- [ ] Full-covariance stochastic volatility
+- [x] Full-covariance stochastic volatility (factor SV; v1: NIW+RW)
 - [x] Replication harness: Carriero et al. (2025) baseline configs + table builder
 - [ ] Replication: match paper tables/figures end-to-end (data and evaluation details)
 
@@ -440,7 +453,7 @@ For full contributor guidelines (including docs builds, style, and testing expec
 ### Limitations and performance notes
 
 - This is currently an **alpha** research toolkit.
-- SV is not “fully general”: diagonal SV and triangular covariance (time-invariant correlations) are supported; fully time-varying correlation dynamics are not.
+- SV coverage is still evolving: diagonal SV, triangular covariance (time-invariant correlations), and factor SV (time-varying full covariance) are supported. Factor SV is currently limited to `prior.family: "niw"` with RW dynamics and is not yet integrated with ELB, steady-state, or robust shocks.
 - MCMC runtime depends heavily on ``T``, ``N``, and sampler settings (draws/burn-in/thinning).
 - Backtests can stream `metrics.csv` without keeping all forecast draws in RAM (see `output.store_forecasts_in_memory`).
 - Stationarity conditioning is implemented as **rejection** of unstable coefficient draws; this can be expensive for weak priors (see `forecast.stationarity_max_draws` / `backtest.stationarity_max_draws`).

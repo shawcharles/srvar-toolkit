@@ -66,10 +66,17 @@ model:
     # State dynamics: "rw" (random walk) or "ar1" (AR(1)).
     dynamics: "rw"                 # optional (default: "rw")
 
-    # Residual covariance: "diagonal" or "triangular".
-    # "triangular" implies a time-invariant correlation structure (CCC-style).
+    # Residual covariance:
+    # - "diagonal": independent shocks
+    # - "triangular": time-invariant correlation structure (CCC-style)
+    # - "factor": factor stochastic volatility (full, time-varying covariance; v1: NIW + RW only)
     covariance: "diagonal"         # optional (default: "diagonal")
     q_prior_var: 1.0               # optional (default: 1.0; required positive for triangular)
+
+    # Factor-SV-only settings (used when covariance="factor")
+    k_factors: 1                   # optional (default: 1; must be <= N)
+    loading_prior_var: 1.0         # optional (default: 1.0; must be > 0)
+    store_factor_draws: false      # optional (default: false)
 
     # KSC mixture stabilization constant used in log(e^2 + epsilon)
     epsilon: 1.0e-4                # optional (default: 1e-4)
@@ -105,6 +112,36 @@ model:
 Notes:
 - `steady_state` requires `include_intercept: true`.
 - When enabled, the intercept is parameterized via a steady-state mean `mu`.
+
+### `model.shocks` (robust innovations)
+
+By default, the VAR uses Gaussian innovations. You can switch to robust shock models via
+`model.shocks`.
+
+Student‑t innovations:
+
+```yaml
+model:
+  shocks:
+    enabled: true                  # optional (default: true)
+    family: "student_t"            # required
+    df: 7.0                        # required; must be > 2
+```
+
+Outlier-mixture innovations:
+
+```yaml
+model:
+  shocks:
+    enabled: true                  # optional (default: true)
+    family: "mixture_outlier"      # required
+    outlier_prob: 0.05             # optional (default: 0.05)
+    outlier_variance: 10.0         # optional (default: 10.0; must be > 1)
+```
+
+Notes / current limitations:
+- Robust shocks are currently supported only for **homoskedastic VARs** (no `model.volatility`).
+- Robust shocks are not yet supported with `model.elb` or `model.steady_state`.
 
 ## `prior`
 

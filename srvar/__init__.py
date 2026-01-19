@@ -1,6 +1,7 @@
 from .api import fit, forecast
 from .data.dataset import Dataset
 from .elb import ElbSpec
+from .spec import ShockSpec
 from .sv import VolatilitySpec
 from .theme import (
     COLORBLIND_THEME,
@@ -23,6 +24,7 @@ __all__ = [
     # Core API
     "Dataset",
     "ElbSpec",
+    "ShockSpec",
     "VolatilitySpec",
     "fit",
     "forecast",

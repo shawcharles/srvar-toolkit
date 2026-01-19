@@ -46,6 +46,22 @@ class MetricsAccumulator:
         self._sum_wis = np.zeros((self._max_h, n), dtype=float)
         self._count_wis = np.zeros((self._max_h, n), dtype=int)
 
+        self._pinball_enabled = bool(evaluation["pinball"]["enabled"])
+        self._pinball_quantiles = (
+            [float(q) for q in list(evaluation["pinball"]["quantiles"])]
+            if self._pinball_enabled
+            else []
+        )
+        self._sum_pinball = np.zeros((self._max_h, n), dtype=float)
+        self._count_pinball = np.zeros((self._max_h, n), dtype=int)
+
+        self._log_score_enabled = bool(evaluation["log_score"]["enabled"])
+        self._log_score_var_floor = (
+            float(evaluation["log_score"]["variance_floor"]) if self._log_score_enabled else 1e-12
+        )
+        self._sum_log_score = np.zeros((self._max_h, n), dtype=float)
+        self._count_log_score = np.zeros((self._max_h, n), dtype=int)
+
         self._coverage_enabled = bool(evaluation["coverage"]["enabled"])
         self._coverage_intervals = (
             [float(c) for c in list(evaluation["coverage"]["intervals"])]
@@ -146,6 +162,50 @@ class MetricsAccumulator:
                     self._sum_wis[h, j] += val
                     self._count_wis[h, j] += 1
 
+        if self._pinball_enabled:
+            use_latent = bool(self._evaluation["pinball"]["use_latent"])
+            sims_all = (
+                np.asarray(forecast.latent_draws, dtype=float)
+                if (use_latent and forecast.latent_draws is not None)
+                else draws
+            )
+            for h in range(self._max_h):
+                for j in range(len(self._variables)):
+                    y = float(yt[h, j])
+                    if np.isnan(y):
+                        continue
+                    val = float(
+                        metrics.pinball_draws(
+                            y, sims_all[:, h, j], quantiles=self._pinball_quantiles
+                        )
+                    )
+                    if np.isnan(val):
+                        continue
+                    self._sum_pinball[h, j] += val
+                    self._count_pinball[h, j] += 1
+
+        if self._log_score_enabled:
+            use_latent = bool(self._evaluation["log_score"]["use_latent"])
+            sims_all = (
+                np.asarray(forecast.latent_draws, dtype=float)
+                if (use_latent and forecast.latent_draws is not None)
+                else draws
+            )
+            for h in range(self._max_h):
+                for j in range(len(self._variables)):
+                    y = float(yt[h, j])
+                    if np.isnan(y):
+                        continue
+                    val = float(
+                        metrics.log_score_draws(
+                            y, sims_all[:, h, j], variance_floor=self._log_score_var_floor
+                        )
+                    )
+                    if np.isnan(val):
+                        continue
+                    self._sum_log_score[h, j] += val
+                    self._count_log_score[h, j] += 1
+
         if self._coverage_enabled and self._coverage_intervals:
             use_latent = bool(self._evaluation["coverage"]["use_latent"])
             sims_all = (
@@ -187,6 +247,20 @@ class MetricsAccumulator:
                     n_wis = int(self._count_wis[h - 1, j])
                     wis = float("nan") if n_wis < 1 else float(self._sum_wis[h - 1, j] / n_wis)
                     row["wis"] = wis
+
+                if self._pinball_enabled:
+                    n_pin = int(self._count_pinball[h - 1, j])
+                    pinball = (
+                        float("nan") if n_pin < 1 else float(self._sum_pinball[h - 1, j] / n_pin)
+                    )
+                    row["pinball"] = pinball
+
+                if self._log_score_enabled:
+                    n_ls = int(self._count_log_score[h - 1, j])
+                    log_score = (
+                        float("nan") if n_ls < 1 else float(self._sum_log_score[h - 1, j] / n_ls)
+                    )
+                    row["log_score"] = log_score
 
                 row["rmse"] = rmse
                 row["mae"] = mae
@@ -259,6 +333,8 @@ def compute_metrics_rows(
     This intentionally mirrors the existing metrics schema:
     - Always outputs `crps`, `rmse`, `mae` columns (CRPS is NaN if disabled).
     - Outputs `wis` only when enabled.
+    - Outputs `pinball` only when enabled.
+    - Outputs `log_score` only when enabled.
     - Coverage columns are only added when enabled.
     """
     yt = np.asarray(y_true, dtype=float)
@@ -275,8 +351,14 @@ def compute_metrics_rows(
     coverage_enabled = bool(evaluation["coverage"]["enabled"])
     crps_enabled = bool(evaluation["crps"]["enabled"])
     wis_enabled = bool(evaluation["wis"]["enabled"])
+    pinball_enabled = bool(evaluation["pinball"]["enabled"])
+    log_score_enabled = bool(evaluation["log_score"]["enabled"])
     intervals = list(evaluation["coverage"]["intervals"]) if coverage_enabled else []
     wis_intervals = list(evaluation["wis"]["intervals"]) if wis_enabled else []
+    pinball_quantiles = list(evaluation["pinball"]["quantiles"]) if pinball_enabled else []
+    log_score_var_floor = (
+        float(evaluation["log_score"]["variance_floor"]) if log_score_enabled else 1e-12
+    )
 
     rows: list[dict[str, Any]] = []
     for j, vname in enumerate(variables):
@@ -288,6 +370,10 @@ def compute_metrics_rows(
             row: dict[str, Any] = {"variable": vname, "horizon": h, "crps": float("nan")}
             if wis_enabled:
                 row["wis"] = float("nan")
+            if pinball_enabled:
+                row["pinball"] = float("nan")
+            if log_score_enabled:
+                row["log_score"] = float("nan")
             row["rmse"] = float(metrics.rmse(errors, axis=0))
             row["mae"] = float(metrics.mae(errors, axis=0))
 
@@ -334,6 +420,62 @@ def compute_metrics_rows(
                     dtype=float,
                 )
                 row["wis"] = float(np.nanmean(wis_vals))
+
+            if pinball_enabled:
+                sims_list = [
+                    (
+                        fc.latent_draws
+                        if (
+                            bool(evaluation["pinball"]["use_latent"])
+                            and fc.latent_draws is not None
+                        )
+                        else fc.draws
+                    )[:, h - 1, j]
+                    for fc in forecasts
+                ]
+                pin_vals = np.asarray(
+                    [
+                        (
+                            float("nan")
+                            if np.isnan(y[i2])
+                            else float(
+                                metrics.pinball_draws(y[i2], sims, quantiles=pinball_quantiles)
+                            )
+                        )
+                        for i2, sims in enumerate(sims_list)
+                    ],
+                    dtype=float,
+                )
+                row["pinball"] = float(np.nanmean(pin_vals))
+
+            if log_score_enabled:
+                sims_list = [
+                    (
+                        fc.latent_draws
+                        if (
+                            bool(evaluation["log_score"]["use_latent"])
+                            and fc.latent_draws is not None
+                        )
+                        else fc.draws
+                    )[:, h - 1, j]
+                    for fc in forecasts
+                ]
+                ls_vals = np.asarray(
+                    [
+                        (
+                            float("nan")
+                            if np.isnan(y[i2])
+                            else float(
+                                metrics.log_score_draws(
+                                    y[i2], sims, variance_floor=log_score_var_floor
+                                )
+                            )
+                        )
+                        for i2, sims in enumerate(sims_list)
+                    ],
+                    dtype=float,
+                )
+                row["log_score"] = float(np.nanmean(ls_vals))
 
             if coverage_enabled:
                 for c in intervals:

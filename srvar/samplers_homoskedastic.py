@@ -14,6 +14,7 @@ from .samplers_ssp import (
     sample_mu_gamma,
     sample_steady_state_mu,
 )
+from .shocks import update_precision_scales
 from .spec import ModelSpec, PriorSpec, SamplerConfig
 from .ssvs import sample_gamma_rows, v0_diag_from_gamma
 from .var import demean_data, design_matrix
@@ -280,7 +281,54 @@ def _fit_no_elb(
     x, y = design_matrix(dataset.values, model.p, include_intercept=model.include_intercept)
 
     niw = prior.niw
+    robust = model.shocks is not None and model.shocks.family != "gaussian"
+    if robust and model.steady_state is not None:
+        raise ValueError("robust shocks with steady_state are not supported")
     if prior_family == "niw":
+        if robust:
+            assert model.shocks is not None
+            lam = np.ones(int(x.shape[0]), dtype=float)
+
+            beta_keep: list[np.ndarray] = []
+            sigma_keep: list[np.ndarray] = []
+            last_posterior: PosteriorNIW | None = None
+
+            for it in range(sampler.draws):
+                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                x_w = x * sqrt_lam
+                y_w = y * sqrt_lam
+
+                mn, vn, sn, nun = posterior_niw(
+                    x=x_w, y=y_w, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0
+                )
+                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+
+                beta_draws, sigma_draws = sample_posterior_niw(
+                    mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
+                )
+                beta = beta_draws[0]
+                sigma = sigma_draws[0]
+
+                resid = y - x @ beta
+                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+
+                if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
+                    beta_keep.append(beta.copy())
+                    sigma_keep.append(sigma.copy())
+
+            if last_posterior is None:
+                raise RuntimeError("sampler.draws produced no posterior")
+
+            return FitResult(
+                dataset=dataset,
+                model=model,
+                prior=prior,
+                sampler=sampler,
+                posterior=last_posterior,
+                beta_draws=np.stack(beta_keep) if beta_keep else None,
+                sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+            )
+
         mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
 
         posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
@@ -328,13 +376,25 @@ def _fit_no_elb(
         if model.include_intercept:
             c_mask[0] = True
 
-        beta_keep = []
-        sigma_keep = []
+        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+
+        beta_keep: list[np.ndarray] = []
+        sigma_keep: list[np.ndarray] = []
         last_posterior = None
 
         for it in range(sampler.draws):
             v0 = _blasso_v0_from_state(tau=tau)
-            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
+
+            if robust:
+                assert lam is not None
+                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                x_w = x * sqrt_lam
+                y_w = y * sqrt_lam
+            else:
+                x_w = x
+                y_w = y
+
+            mn, vn, sn, nun = posterior_niw(x=x_w, y=y_w, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
             beta_draws, sigma_draws = sample_posterior_niw(
@@ -365,6 +425,11 @@ def _fit_no_elb(
                     c_mask=c_mask,
                     rng=rng,
                 )
+
+            if robust:
+                assert model.shocks is not None
+                resid = y - x @ beta
+                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
                 beta_keep.append(beta.copy())
@@ -401,21 +466,34 @@ def _fit_no_elb(
         zeta = float(spec_d.dl_scaler)
         inv_v0 = 1.0 / (psi * (vartheta * vartheta) * (zeta * zeta) + 1e-6)
 
-        beta_keep = []
-        sigma_keep = []
+        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+
+        beta_keep: list[np.ndarray] = []
+        sigma_keep: list[np.ndarray] = []
         last_posterior = None
 
         for it in range(sampler.draws):
+            if robust:
+                assert lam is not None
+                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                x_w = x * sqrt_lam
+                y_w = y * sqrt_lam
+            else:
+                x_w = x
+                y_w = y
+
             beta, sigma = _dl_sample_beta_sigma(
-                x=x,
-                y=y,
+                x=x_w,
+                y=y_w,
                 m0=niw.m0,
                 inv_v0_vec=inv_v0,
                 s0=niw.s0,
                 nu0=niw.nu0,
                 rng=rng,
             )
-            mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
+            mn, vn, sn, nun = posterior_niw(
+                x=x_w, y=y_w, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0
+            )
             last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
             psi, vartheta, zeta, inv_v0 = _dl_update(
@@ -426,6 +504,11 @@ def _fit_no_elb(
                 abeta=float(spec_d.abeta),
                 rng=rng,
             )
+
+            if robust:
+                assert model.shocks is not None
+                resid = y - x @ beta
+                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
                 beta_keep.append(beta.copy())
@@ -465,8 +548,18 @@ def _fit_no_elb(
     sigma_keep = []
     gamma_keep = []
     last_posterior = None
+    lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
 
     for it in range(sampler.draws):
+        if robust:
+            assert lam is not None
+            sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+            x_w = x * sqrt_lam
+            y_w = y * sqrt_lam
+        else:
+            x_w = x
+            y_w = y
+
         v0_diag = v0_diag_from_gamma(
             gamma=gamma,
             spike_var=spec.spike_var,
@@ -475,7 +568,7 @@ def _fit_no_elb(
         )
         v0 = np.diag(v0_diag)
 
-        mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
+        mn, vn, sn, nun = posterior_niw(x=x_w, y=y_w, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
         last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
         beta_draws, sigma_draws = sample_posterior_niw(
@@ -494,6 +587,11 @@ def _fit_no_elb(
             fixed_mask=fixed_mask,
             rng=rng,
         )
+
+        if robust:
+            assert model.shocks is not None
+            resid = y - x @ beta
+            lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
 
         if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
             beta_keep.append(beta.copy())

@@ -53,6 +53,51 @@ class SteadyStateSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class ShockSpec:
+    """Innovation (shock) distribution configuration.
+
+    Parameters
+    ----------
+    family:
+        Shock family identifier.
+
+        - ``"gaussian"``: standard Gaussian innovations.
+        - ``"student_t"``: multivariate Student-t innovations via a scale-mixture of normals.
+        - ``"mixture_outlier"``: two-component Gaussian mixture with an outlier variance inflation.
+    df:
+        Degrees of freedom for ``family="student_t"``. Must be finite and > 2.
+    outlier_prob:
+        Outlier probability for ``family="mixture_outlier"``. Must be in (0, 1).
+    outlier_variance:
+        Variance inflation factor for outliers in ``family="mixture_outlier"``. Must be finite
+        and > 1.0. When an outlier occurs, innovations have covariance ``outlier_variance * Sigma``.
+    """
+
+    family: Literal["gaussian", "student_t", "mixture_outlier"] = "gaussian"
+    df: float = 7.0
+    outlier_prob: float = 0.05
+    outlier_variance: float = 10.0
+
+    def __post_init__(self) -> None:
+        fam = str(self.family).lower()
+        if fam not in {"gaussian", "student_t", "mixture_outlier"}:
+            raise ValueError("family must be one of: gaussian, student_t, mixture_outlier")
+
+        if fam == "student_t":
+            nu = float(self.df)
+            if not np.isfinite(nu) or nu <= 2.0:
+                raise ValueError("df must be finite and > 2 for student_t")
+
+        if fam == "mixture_outlier":
+            p = float(self.outlier_prob)
+            if not (0.0 < p < 1.0):
+                raise ValueError("outlier_prob must be in (0, 1) for mixture_outlier")
+            kappa = float(self.outlier_variance)
+            if not np.isfinite(kappa) or kappa <= 1.0:
+                raise ValueError("outlier_variance must be finite and > 1 for mixture_outlier")
+
+
+@dataclass(frozen=True, slots=True)
 class ModelSpec:
     """Model configuration for VAR/SRVAR estimation.
 
@@ -85,6 +130,7 @@ class ModelSpec:
     steady_state: SteadyStateSpec | None = None
     elb: ElbSpec | None = None
     volatility: VolatilitySpec | None = None
+    shocks: ShockSpec | None = None
 
     def __post_init__(self) -> None:
         if self.p < 1:

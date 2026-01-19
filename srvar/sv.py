@@ -28,6 +28,18 @@ class VolatilitySpec:
     full residual covariance matrix with time-varying variances and a time-invariant
     correlation structure.
 
+    Setting ``covariance='factor'`` enables factor stochastic volatility (FSV):
+
+        ``eps_t = Lambda f_t + eta_t``
+
+        ``f_t ~ N(0, diag(exp(h_f,t)))``
+
+        ``eta_t ~ N(0, diag(exp(h_eta,t)))``
+
+        ``Sigma_t = Lambda diag(exp(h_f,t)) Lambda' + diag(exp(h_eta,t))``
+
+    This yields a full, time-varying covariance matrix with scalable low-rank structure.
+
     Parameters
     ----------
     enabled:
@@ -45,10 +57,18 @@ class VolatilitySpec:
     covariance:
         Covariance structure. ``"diagonal"`` is independent shocks. ``"triangular"``
         uses an upper-triangular factor ``Q`` with ones on the diagonal (a CCCM-style
-        multivariate SV factorization).
+        multivariate SV factorization). ``"factor"`` enables factor SV (FSV).
     q_prior_var:
         Prior variance for the off-diagonal elements of ``Q`` when
         ``covariance='triangular'``.
+    k_factors:
+        Number of latent factors for ``covariance='factor'``.
+    loading_prior_var:
+        Prior variance for free elements of the factor loading matrix ``Lambda`` when
+        ``covariance='factor'``.
+    store_factor_draws:
+        If True, store latent factor draws ``f_t`` in the fit result. This can be memory
+        intensive (scales with ``draws × T × k_factors``), so the default is False.
     epsilon:
         Small positive constant used in the transform
         ``log(e_t^2 + epsilon)`` to avoid ``log(0)``.
@@ -68,8 +88,11 @@ class VolatilitySpec:
 
     enabled: bool = True
     dynamics: Literal["rw", "ar1"] = "rw"
-    covariance: Literal["diagonal", "triangular"] = "diagonal"
+    covariance: Literal["diagonal", "triangular", "factor"] = "diagonal"
     q_prior_var: float = 1.0
+    k_factors: int = 1
+    loading_prior_var: float = 1.0
+    store_factor_draws: bool = False
     epsilon: float = 1e-4
     h0_prior_mean: float = 1e-6
     h0_prior_var: float = 10.0
@@ -83,12 +106,21 @@ class VolatilitySpec:
     def __post_init__(self) -> None:
         if self.dynamics not in {"rw", "ar1"}:
             raise ValueError("dynamics must be one of {'rw','ar1'}")
-        if self.covariance not in {"diagonal", "triangular"}:
-            raise ValueError("covariance must be one of {'diagonal','triangular'}")
+        if self.covariance not in {"diagonal", "triangular", "factor"}:
+            raise ValueError("covariance must be one of {'diagonal','triangular','factor'}")
         if self.covariance == "triangular" and (
             self.q_prior_var <= 0 or not np.isfinite(self.q_prior_var)
         ):
             raise ValueError("q_prior_var must be positive and finite when covariance='triangular'")
+        if self.covariance == "factor":
+            if not isinstance(self.k_factors, (int, np.integer)) or isinstance(self.k_factors, bool):
+                raise ValueError("k_factors must be an integer when covariance='factor'")
+            if int(self.k_factors) < 1:
+                raise ValueError("k_factors must be >= 1 when covariance='factor'")
+            if self.loading_prior_var <= 0 or not np.isfinite(self.loading_prior_var):
+                raise ValueError(
+                    "loading_prior_var must be positive and finite when covariance='factor'"
+                )
         if self.epsilon <= 0 or not np.isfinite(self.epsilon):
             raise ValueError("epsilon must be positive")
         if self.h0_prior_var <= 0 or not np.isfinite(self.h0_prior_var):

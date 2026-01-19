@@ -4,6 +4,8 @@ import numpy as np
 import scipy.stats
 
 from .linalg import cholesky_jitter, solve_psd, symmetrize
+from .shocks import sample_innovation
+from .spec import ShockSpec
 
 
 def posterior_niw(
@@ -97,7 +99,10 @@ def sample_posterior_niw(
 
     for d in range(draws):
         sigma = iw.rvs(random_state=rng)
-        sigma = symmetrize(np.asarray(sigma, dtype=float))
+        sigma = np.asarray(sigma, dtype=float)
+        if sigma.ndim == 0:
+            sigma = sigma.reshape(1, 1)
+        sigma = symmetrize(sigma)
 
         ls = cholesky_jitter(sigma)
         z = rng.standard_normal((k, n))
@@ -117,6 +122,7 @@ def simulate_var_forecast(
     horizon: int,
     include_intercept: bool,
     rng: np.random.Generator,
+    shocks: ShockSpec | None = None,
 ) -> np.ndarray:
     """Simulate one forecast path for a VAR(p).
 
@@ -159,7 +165,11 @@ def simulate_var_forecast(
         x = np.concatenate(x_parts)
 
         mean = x @ beta
-        eps = rng.multivariate_normal(mean=np.zeros(n, dtype=float), cov=sigma)
+        eps = (
+            rng.multivariate_normal(mean=np.zeros(n, dtype=float), cov=sigma)
+            if (shocks is None or shocks.family == "gaussian")
+            else sample_innovation(sigma=sigma, spec=shocks, rng=rng)
+        )
         y_next = mean + eps
 
         path[h] = y_next

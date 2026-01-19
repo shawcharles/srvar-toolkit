@@ -9,7 +9,7 @@ import pandas as pd
 
 from .data.dataset import Dataset
 from .elb import ElbSpec
-from .spec import ModelSpec, MuSSVSSpec, PriorSpec, SamplerConfig, SteadyStateSpec
+from .spec import ModelSpec, MuSSVSSpec, PriorSpec, SamplerConfig, ShockSpec, SteadyStateSpec
 from .sv import VolatilitySpec
 
 
@@ -253,13 +253,38 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
             if not isinstance(covariance, str) or not covariance:
                 raise ConfigError("model.volatility.covariance must be a non-empty string")
             covariance_l = covariance.lower()
-            if covariance_l not in {"diagonal", "triangular"}:
+            if covariance_l not in {"diagonal", "triangular", "factor"}:
                 raise ConfigError(
-                    "model.volatility.covariance must be one of {'diagonal','triangular'}"
+                    "model.volatility.covariance must be one of {'diagonal','triangular','factor'}"
                 )
+
+            if covariance_l == "factor" and dynamics_l != "rw":
+                raise ConfigError("model.volatility.covariance='factor' currently supports only dynamics='rw'")
 
             q_prior_var_raw = _get(vol_cfg, "q_prior_var", default=1.0)
             q_prior_var = _as_float(q_prior_var_raw, key="model.volatility.q_prior_var")
+
+            k_factors = 1
+            loading_prior_var = 1.0
+            store_factor_draws = False
+            if covariance_l == "factor":
+                k_factors = _as_int(
+                    _get(vol_cfg, "k_factors", default=1),
+                    key="model.volatility.k_factors",
+                    min_value=1,
+                )
+                if k_factors > dataset.N:
+                    raise ConfigError("model.volatility.k_factors must be <= N")
+                loading_prior_var = _as_float(
+                    _get(vol_cfg, "loading_prior_var", default=1.0),
+                    key="model.volatility.loading_prior_var",
+                )
+                if loading_prior_var <= 0 or not np.isfinite(loading_prior_var):
+                    raise ConfigError("model.volatility.loading_prior_var must be finite and > 0")
+                store_factor_draws = _as_bool(
+                    _get(vol_cfg, "store_factor_draws", default=False),
+                    key="model.volatility.store_factor_draws",
+                )
 
             phi_prior_mean = _as_float(
                 _get(vol_cfg, "phi_prior_mean", default=0.95), key="model.volatility.phi_prior_mean"
@@ -280,6 +305,9 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
                 dynamics=dynamics_l,  # type: ignore[arg-type]
                 covariance=covariance_l,  # type: ignore[arg-type]
                 q_prior_var=q_prior_var,
+                k_factors=k_factors,
+                loading_prior_var=loading_prior_var,
+                store_factor_draws=store_factor_draws,
                 epsilon=_as_float(
                     _get(vol_cfg, "epsilon", default=1e-4), key="model.volatility.epsilon"
                 ),
@@ -374,12 +402,55 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
             except ValueError as e:
                 raise ConfigError(str(e)) from e
 
+    shocks_spec: ShockSpec | None = None
+    shocks_cfg = _get(model_cfg, "shocks", default=None)
+    if shocks_cfg is not None:
+        if not isinstance(shocks_cfg, dict):
+            raise ConfigError("model.shocks must be a mapping")
+        enabled = _as_bool(_get(shocks_cfg, "enabled", default=True), key="model.shocks.enabled")
+        if enabled:
+            family = _get(shocks_cfg, "family", required=True)
+            if not isinstance(family, str) or not family:
+                raise ConfigError("model.shocks.family must be a non-empty string")
+            family_l = family.lower()
+            kwargs: dict[str, Any] = {"family": family_l}
+            if family_l == "student_t":
+                kwargs["df"] = _as_float(
+                    _get(shocks_cfg, "df", required=True), key="model.shocks.df"
+                )
+            elif family_l == "mixture_outlier":
+                p_out = _get(
+                    shocks_cfg, "outlier_prob", default=_get(shocks_cfg, "prob", default=0.05)
+                )
+                var_inf = _get(
+                    shocks_cfg,
+                    "outlier_variance",
+                    default=_get(shocks_cfg, "variance_inflation", default=10.0),
+                )
+                kwargs["outlier_prob"] = _as_float(p_out, key="model.shocks.outlier_prob")
+                kwargs["outlier_variance"] = _as_float(var_inf, key="model.shocks.outlier_variance")
+            try:
+                shocks_spec = ShockSpec(**kwargs)  # type: ignore[arg-type]
+            except TypeError as e:  # pragma: no cover
+                raise ConfigError(f"invalid model.shocks configuration: {e}") from e
+            except ValueError as e:
+                raise ConfigError(str(e)) from e
+
+    if shocks_spec is not None and shocks_spec.family != "gaussian":
+        if elb_spec is not None and elb_spec.enabled:
+            raise ConfigError("robust shocks are not supported with model.elb (yet)")
+        if vol_spec is not None and vol_spec.enabled:
+            raise ConfigError("robust shocks are not supported with model.volatility (yet)")
+        if ss_spec is not None:
+            raise ConfigError("robust shocks are not supported with model.steady_state (yet)")
+
     return ModelSpec(
         p=p,
         include_intercept=include_intercept,
         steady_state=ss_spec,
         elb=elb_spec,
         volatility=vol_spec,
+        shocks=shocks_spec,
     )
 
 
@@ -763,6 +834,49 @@ def build_evaluation_config(
             if not np.isfinite(c) or c < 0.0 or c >= 1.0:
                 raise ConfigError("evaluation.wis.intervals must satisfy 0 <= c < 1")
 
+    pin_cfg = _get(ev_cfg, "pinball", default={})
+    if pin_cfg is None:
+        pin_cfg = {}
+    if not isinstance(pin_cfg, dict):
+        raise ConfigError("evaluation.pinball must be a mapping")
+    pin_enabled = _as_bool(
+        _get(pin_cfg, "enabled", default=False), key="evaluation.pinball.enabled"
+    )
+    pin_use_latent = _as_bool(
+        _get(pin_cfg, "use_latent", default=False), key="evaluation.pinball.use_latent"
+    )
+    pin_quantiles = _get(pin_cfg, "quantiles", default=[0.1, 0.5, 0.9])
+    if pin_quantiles is None:
+        pin_quantiles = [0.1, 0.5, 0.9]
+    if not isinstance(pin_quantiles, list) or not all(
+        isinstance(v, (float, int, np.floating, np.integer)) for v in pin_quantiles
+    ):
+        raise ConfigError("evaluation.pinball.quantiles must be a list[float]")
+    pin_quantiles_f = [float(v) for v in pin_quantiles]
+    if pin_enabled:
+        if len(pin_quantiles_f) < 1:
+            raise ConfigError("evaluation.pinball.quantiles must be non-empty when enabled")
+        for q in pin_quantiles_f:
+            if not np.isfinite(q) or q < 0.0 or q > 1.0:
+                raise ConfigError("evaluation.pinball.quantiles must satisfy 0 <= q <= 1")
+
+    ls_cfg = _get(ev_cfg, "log_score", default={})
+    if ls_cfg is None:
+        ls_cfg = {}
+    if not isinstance(ls_cfg, dict):
+        raise ConfigError("evaluation.log_score must be a mapping")
+    ls_enabled = _as_bool(
+        _get(ls_cfg, "enabled", default=False), key="evaluation.log_score.enabled"
+    )
+    ls_use_latent = _as_bool(
+        _get(ls_cfg, "use_latent", default=False), key="evaluation.log_score.use_latent"
+    )
+    ls_var_floor = _as_float(
+        _get(ls_cfg, "variance_floor", default=1e-12), key="evaluation.log_score.variance_floor"
+    )
+    if not np.isfinite(ls_var_floor) or ls_var_floor <= 0.0:
+        raise ConfigError("evaluation.log_score.variance_floor must be finite and > 0")
+
     metrics_table = _as_bool(
         _get(ev_cfg, "metrics_table", default=True), key="evaluation.metrics_table"
     )
@@ -785,6 +899,16 @@ def build_evaluation_config(
             "enabled": wis_enabled,
             "intervals": wis_intervals_f,
             "use_latent": wis_use_latent,
+        },
+        "pinball": {
+            "enabled": pin_enabled,
+            "quantiles": pin_quantiles_f,
+            "use_latent": pin_use_latent,
+        },
+        "log_score": {
+            "enabled": ls_enabled,
+            "variance_floor": ls_var_floor,
+            "use_latent": ls_use_latent,
         },
         "elb_censor": {
             "enabled": elb_enabled,

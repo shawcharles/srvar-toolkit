@@ -4,10 +4,11 @@ This project targets transparency and reproducibility and is currently in an **a
 
 ## Modeling limitations
 
-- **Stochastic volatility is not “fully general”**: the toolkit supports diagonal SV and a triangular factorization with time-invariant correlations, but it does not currently implement fully time-varying correlation / covariance dynamics.
+- **Stochastic volatility coverage is still evolving**: diagonal SV, triangular (time-invariant correlation) SV, and factor SV (time-varying full covariance) are supported. Factor SV is currently limited to `prior.family: "niw"` with RW dynamics and is not yet integrated with ELB, steady-state, or robust shock models.
 - **Structural analysis coverage is partial**: reduced-form, Cholesky, and sign-restricted IRFs are supported via `srvar.analysis` (plus FEVD and Cholesky historical decompositions), but other workflows (e.g. sign-restricted historical decompositions) are not yet first-class.
 - **Conditional/scenario forecasts are limited**: `srvar.scenario.conditional_forecast` currently supports homoskedastic VARs. For ELB models, conditioning is applied to the latent (unfloored) process.
 - **ELB treatment**: ELB handling is implemented via latent shadow-rate augmentation for selected series.
+- **Robust shocks limitations**: Student‑t and outlier-mixture innovations are currently supported only for homoskedastic VARs (no SV) and are not yet supported with ELB or steady-state parameterisation.
 
 ## Statistical limitations / caveats
 

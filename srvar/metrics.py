@@ -105,3 +105,71 @@ def wis_draws(y: float, draws: np.ndarray, *, intervals: list[float]) -> float:
             total += y - hi
 
     return float(total / (float(len(intervals)) + 0.5))
+
+
+def pinball_draws(y: float, draws: np.ndarray, *, quantiles: list[float]) -> float:
+    """Mean pinball (quantile) loss from predictive draws.
+
+    Parameters
+    ----------
+    y:
+        Realized scalar value.
+    draws:
+        Predictive draws for the same scalar (any shape; flattened internally).
+    quantiles:
+        Quantile levels in [0, 1] (e.g., [0.1, 0.5, 0.9]).
+    """
+    x = np.asarray(draws, dtype=float).reshape(-1)
+    if x.size < 1:
+        raise ValueError("draws must be non-empty")
+
+    if np.isnan(y) or np.any(np.isnan(x)):
+        return float("nan")
+
+    if any((not np.isfinite(q)) or (q < 0.0) or (q > 1.0) for q in quantiles):
+        raise ValueError("quantiles must be finite and satisfy 0 <= q <= 1")
+    if len(quantiles) < 1:
+        raise ValueError("quantiles must be non-empty")
+
+    qs = np.asarray(quantiles, dtype=float)
+    qhat = np.quantile(x, q=qs)
+
+    u = float(y) - qhat
+    loss = np.where(u >= 0.0, qs * u, (1.0 - qs) * (-u))
+    return float(np.mean(loss))
+
+
+def log_score_draws(y: float, draws: np.ndarray, *, variance_floor: float = 1e-12) -> float:
+    """Gaussian log score (log predictive density) from predictive draws.
+
+    This computes the log density of the realized value `y` under a Gaussian
+    approximation to the predictive distribution implied by `draws`:
+
+        y ~ Normal(mean(draws), var(draws))
+
+    Parameters
+    ----------
+    y:
+        Realized scalar value.
+    draws:
+        Predictive draws for the same scalar (any shape; flattened internally).
+    variance_floor:
+        Lower bound applied to the draw variance to avoid degeneracy when draws
+        are (nearly) constant. Must be finite and > 0.
+    """
+    x = np.asarray(draws, dtype=float).reshape(-1)
+    if x.size < 1:
+        raise ValueError("draws must be non-empty")
+
+    if not np.isfinite(y) or np.any(~np.isfinite(x)):
+        return float("nan")
+
+    vf = float(variance_floor)
+    if (not np.isfinite(vf)) or (vf <= 0.0):
+        raise ValueError("variance_floor must be finite and > 0")
+
+    mu = float(np.mean(x))
+    var = float(np.var(x))
+    var = max(var, vf)
+    z = float(y) - mu
+    return float(-0.5 * (np.log(2.0 * np.pi * var) + (z * z) / var))

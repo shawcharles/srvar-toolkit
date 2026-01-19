@@ -19,6 +19,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - YAML-only configuration support for SSP via `model.steady_state`.
 - SSP example script (`examples/ssp_fit_forecast.py`).
 - SSP test coverage (`tests/test_ssp.py`).
+- Robust shock models for homoskedastic VARs via `model.shocks` (Student‑t and outlier-mixture innovations).
+- Full-covariance stochastic volatility via factor SV (`model.volatility.covariance: "factor"`, `k_factors`) with RW dynamics (v1: `prior.family: "niw"`).
+- Optional `xarray` conversion utilities for labeled outputs (`srvar.xarray`).
+- Optional ArviZ conversion utilities for `InferenceData` outputs (`srvar.arviz`).
 - ELB-censored backtest evaluation via `evaluation.elb_censor` (censor realized values and optionally forecast draws).
 - Streaming backtest evaluation for `metrics.csv` via `output.store_forecasts_in_memory` (reduces RAM for long runs).
 - Synthetic memory benchmark script (`scripts/benchmark_backtest_memory.py`).
@@ -29,6 +33,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - `forecast()` now requires stored `beta_draws` when `steady_state` is enabled.
 - Split config/backtest/evaluation/artifacts logic into `srvar.config`, `srvar.backtest`, `srvar.evaluation`, `srvar.artifacts` (keeping `srvar.runner` as a thin façade).
 - Backtest evaluation flags now control both computation and outputs (`evaluation.coverage.enabled`, `evaluation.crps.enabled`, `evaluation.pit.enabled`).
+
+### Fixed
+
+- NIW posterior sampling now correctly handles the univariate case (`N=1`) when drawing from the inverse-Wishart distribution.
 
 ## [0.1.0] - 2025-12-22
 

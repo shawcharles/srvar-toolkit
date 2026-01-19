@@ -22,6 +22,8 @@ For each variable `j` and horizon `h`, the toolkit reports:
 - `mae`: mean absolute error of the predictive mean
 - `crps`: mean CRPS over origins (draw-based; `NaN` when disabled)
 - `wis`: mean weighted interval score (WIS) over origins (draw-based; only when enabled)
+- `pinball`: mean pinball (quantile) loss over origins (draw-based; only when enabled)
+- `log_score`: mean Gaussian log score over origins (draw-based; only when enabled)
 - `coverage_<p>`: empirical coverage of the central `p%` interval (only when enabled)
 
 Notes:
@@ -96,6 +98,43 @@ evaluation:
 
 When enabled, the toolkit writes a `wis` column in `metrics.csv` (mean WIS over origins). When disabled,
 the `wis` column is omitted to keep the default `metrics.csv` schema stable.
+
+## Pinball loss (quantile score)
+
+Enable/disable via:
+
+```yaml
+evaluation:
+  pinball:
+    enabled: true
+    quantiles: [0.1, 0.5, 0.9]
+    use_latent: false
+```
+
+When enabled, the toolkit writes a `pinball` column in `metrics.csv` (mean pinball loss over origins).
+When disabled, the `pinball` column is omitted to keep the default `metrics.csv` schema stable.
+
+## Log score (Gaussian LPD)
+
+Enable/disable via:
+
+```yaml
+evaluation:
+  log_score:
+    enabled: true
+    variance_floor: 1e-12
+    use_latent: false
+```
+
+When enabled, the toolkit writes a `log_score` column in `metrics.csv` (mean log score over origins).
+When disabled, the `log_score` column is omitted to keep the default `metrics.csv` schema stable.
+
+The current implementation uses a **Gaussian approximation** implied by the predictive draws:
+
+`y ~ Normal(mean(draws), var(draws))`
+
+and reports `log p(y_true)` under that approximation. The `variance_floor` avoids degeneracy when
+draws are (nearly) constant.
 
 ## ELB-censored evaluation (interest-rate scoring)
 

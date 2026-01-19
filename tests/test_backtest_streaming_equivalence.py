@@ -92,6 +92,8 @@ def test_backtest_streaming_matches_in_memory(monkeypatch, tmp_path) -> None:
             "coverage": {"enabled": True, "intervals": [0.5, 0.9], "use_latent": False},
             "crps": {"enabled": True, "use_latent": False},
             "wis": {"enabled": True, "intervals": [0.5, 0.9], "use_latent": False},
+            "pinball": {"enabled": True, "quantiles": [0.1, 0.5, 0.9], "use_latent": False},
+            "log_score": {"enabled": True, "variance_floor": 1e-12, "use_latent": False},
             "pit": {"enabled": False},
         },
         "output": {"save_plots": False, "save_forecasts": False},

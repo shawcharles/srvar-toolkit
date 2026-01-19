@@ -69,6 +69,15 @@ accel = [
   "numba>=0.60",
 ]
 
+xarray = [
+  "xarray>=2024.7",
+]
+
+arviz = [
+  "arviz>=0.17",
+  "xarray>=2024.7",
+]
+
 [project.scripts]
 srvar = "srvar.cli:main"
 
