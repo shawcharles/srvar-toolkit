@@ -59,3 +59,20 @@ def test_config_rejects_robust_shocks_with_elb() -> None:
     }
     with pytest.raises(ConfigError, match="robust shocks"):
         build_model(cfg, dataset=ds)
+
+
+def test_config_allows_robust_shocks_with_factor_sv() -> None:
+    ds = Dataset.from_arrays(values=np.zeros((12, 2)), variables=["y1", "y2"])
+    cfg = {
+        "model": {
+            "p": 1,
+            "volatility": {"enabled": True, "covariance": "factor", "k_factors": 1},
+            "shocks": {"family": "student_t", "df": 7.0},
+        }
+    }
+    model = build_model(cfg, dataset=ds)
+    assert model.volatility is not None
+    assert model.volatility.enabled
+    assert model.volatility.covariance == "factor"
+    assert model.shocks is not None
+    assert model.shocks.family == "student_t"

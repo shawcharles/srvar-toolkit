@@ -196,6 +196,7 @@ def load_run_dir(
     """Load a :class:`~srvar.results.FitResult` from a `srvar run` output directory.
 
     This function:
+
     1) Loads the stored draws/state from ``fit_result.npz``.
     2) Reconstructs ``ModelSpec``, ``PriorSpec``, and ``SamplerConfig`` from the saved
        ``config.yml`` (without re-loading the original CSV).

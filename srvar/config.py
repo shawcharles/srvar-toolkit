@@ -437,12 +437,22 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
                 raise ConfigError(str(e)) from e
 
     if shocks_spec is not None and shocks_spec.family != "gaussian":
-        if elb_spec is not None and elb_spec.enabled:
-            raise ConfigError("robust shocks are not supported with model.elb (yet)")
-        if vol_spec is not None and vol_spec.enabled:
-            raise ConfigError("robust shocks are not supported with model.volatility (yet)")
-        if ss_spec is not None:
-            raise ConfigError("robust shocks are not supported with model.steady_state (yet)")
+        vol_factor = vol_spec is not None and vol_spec.enabled and vol_spec.covariance == "factor"
+        if elb_spec is not None and elb_spec.enabled and not vol_factor:
+            raise ConfigError(
+                "robust shocks with model.elb require factor SV "
+                "(model.volatility.covariance: 'factor')"
+            )
+        if ss_spec is not None and not vol_factor:
+            raise ConfigError(
+                "robust shocks with model.steady_state require factor SV "
+                "(model.volatility.covariance: 'factor')"
+            )
+        if vol_spec is not None and vol_spec.enabled and not vol_factor:
+            raise ConfigError(
+                "robust shocks are currently supported only with factor SV "
+                "(model.volatility.covariance: 'factor')"
+            )
 
     return ModelSpec(
         p=p,

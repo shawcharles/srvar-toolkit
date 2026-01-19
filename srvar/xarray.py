@@ -206,6 +206,8 @@ def fit_to_xarray(fit: FitResult) -> Any:
                 "factor": np.arange(k, dtype=int),
             },
         )
+        ds["loadings"] = ds["lambda"].copy(deep=False)
+        ds["loadings"].attrs["alias_of"] = "lambda"
 
     if fit.factor_draws is not None:
         f = np.asarray(fit.factor_draws, dtype=float)

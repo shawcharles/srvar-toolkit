@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+> TODO: Add changes here as development continues.
+
+## [0.2.0] - 2026-01-19
+
 ### Added
 
 - `srvar fetch-fred` command to fetch FRED series to a cached CSV (config-driven).
@@ -19,15 +23,22 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - YAML-only configuration support for SSP via `model.steady_state`.
 - SSP example script (`examples/ssp_fit_forecast.py`).
 - SSP test coverage (`tests/test_ssp.py`).
-- Robust shock models for homoskedastic VARs via `model.shocks` (Student‑t and outlier-mixture innovations).
-- Full-covariance stochastic volatility via factor SV (`model.volatility.covariance: "factor"`, `k_factors`) with RW dynamics (v1: `prior.family: "niw"`).
+- Robust shock models for homoskedastic VARs and factor SV via `model.shocks` (Student‑t and outlier-mixture innovations).
+- Full-covariance stochastic volatility via factor SV (`model.volatility.covariance: "factor"`, `k_factors`) with RW dynamics (v1: `prior.family: "niw"`), including ELB shadow-rate data augmentation and steady-state support.
+- Structural analysis stack (`srvar.analysis`, `srvar.identification`) including Cholesky IRFs, sign-restricted IRFs, FEVD, and historical decomposition (supports factor SV covariance draws).
+- Conditional / scenario forecasting utilities (`srvar.scenario`).
 - Optional `xarray` conversion utilities for labeled outputs (`srvar.xarray`).
 - Optional ArviZ conversion utilities for `InferenceData` outputs (`srvar.arviz`).
+- Labeled output hardening for factor SV loadings (`FitResult.loading_draws` and `ds_fit["loadings"]` alias of `ds_fit["lambda"]`).
+- Expository notebooks in `examples/notebooks/` (quickstart, ELB, FSV, structural analysis, and backtesting/evaluation conventions).
 - Factor SV demo config (`config/fsv_demo_config.yaml`) and example script (`examples/fsv_fit_forecast.py`).
-- Structural analysis supports factor SV covariance states (Cholesky IRFs, sign-restricted IRFs, FEVD, historical decomposition).
 - `srvar.artifacts.load_run_dir(out_dir)` to reconstruct a `FitResult` from `config.yml` + `fit_result.npz` (including factor SV draws and optional latent dataset / NIW posterior blocks).
 - ELB-censored backtest evaluation via `evaluation.elb_censor` (censor realized values and optionally forecast draws).
 - Streaming backtest evaluation for `metrics.csv` via `output.store_forecasts_in_memory` (reduces RAM for long runs).
+- Additional scoring rules and comparison utilities:
+  - weighted interval score (WIS), pinball (quantile) loss, and Gaussian log score / LPD approximation (`srvar.metrics`, `srvar.evaluation`)
+  - Diebold–Mariano test and Giacomini–White CPA test (`srvar.stats`)
+- Simple forecast pooling / ensembles (`srvar.ensemble`).
 - Synthetic memory benchmark script (`scripts/benchmark_backtest_memory.py`).
 
 ### Changed

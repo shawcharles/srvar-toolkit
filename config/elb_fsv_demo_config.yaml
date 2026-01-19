@@ -1,13 +1,14 @@
-# srvar-toolkit demo configuration (CSV input) for factor stochastic volatility (FSV)
+# srvar-toolkit demo configuration (CSV input) for ELB + factor stochastic volatility (FSV)
 #
 # Run:
-#   srvar validate config/fsv_demo_config.yaml
-#   srvar run config/fsv_demo_config.yaml
+#   srvar validate config/elb_fsv_demo_config.yaml
+#   srvar run config/elb_fsv_demo_config.yaml
 #
 # Notes:
 # - FSV currently supports: volatility.dynamics = "rw", prior.family = "niw".
-# - FSV supports ELB (shadow-rate data augmentation) and steady-state priors.
-# - FSV supports robust shocks (Student-t / outlier mixture) via model.shocks.
+# - Observations at/below the ELB (`bound + tol`) are treated as censored and updated as latent shadow
+#   values during estimation. In production, provide observed rates floored at the bound.
+# - FSV supports steady-state priors and robust shocks (Student-t / outlier mixture).
 #
 
 data:
@@ -26,6 +27,13 @@ model:
   #   enabled: true
   #   family: "student_t"
   #   df: 7.0
+
+  elb:
+    enabled: true
+    bound: 0.0
+    applies_to: ["r"]
+    tol: 1.0e-8
+    init_offset: 0.05
 
   volatility:
     enabled: true
@@ -69,7 +77,7 @@ forecast:
   quantile_levels: [0.1, 0.5, 0.9]
 
 output:
-  out_dir: "outputs/fsv_demo_run"
+  out_dir: "outputs/elb_fsv_demo_run"
   save_fit: true
   save_forecast: true
   save_plots: true

@@ -97,7 +97,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
 | **Stochastic Volatility** | Diagonal SV with RW/AR(1) state dynamics; optional triangular covariance (time-invariant correlations); optional factor SV (full time-varying covariance; v1: NIW+RW) | `ModelSpec(volatility=VolatilitySpec(...))` | Supported |
 | **Combined ELB + SV** | Joint shadow-rate and stochastic volatility model | `ModelSpec(elb=..., volatility=...)` | Supported |
-| **Robust Shocks** | Student‑t and outlier-mixture innovations (homoskedastic VARs) | `ModelSpec(shocks=ShockSpec(...))` | Supported |
+| **Robust Shocks** | Student‑t and outlier-mixture innovations (homoskedastic VARs; factor SV supported) | `ModelSpec(shocks=ShockSpec(...))` | Supported |
 | **Steady-State VAR (SSP)** | Parameterize the VAR intercept via a steady-state mean `mu` (optional mu-SSVS) | `ModelSpec(steady_state=SteadyStateSpec(...))` | Supported |
 | **Forecasting** | Posterior predictive simulation with quantiles | `srvar.api.forecast(...)` | Supported |
 | **Conditional Forecasting** | Scenario forecasts with hard constraints (linear Gaussian VARs) | `srvar.scenario.conditional_forecast(...)` | Supported |
@@ -242,6 +242,36 @@ fc = forecast(fit_res, horizons=[1, 4], draws=200)
 print(fc.mean)
 ```
 
+### Labeled outputs (`xarray` / ArviZ)
+
+Optional labeled outputs are available via `srvar.xarray` and `srvar.arviz` (see `srvar/xarray.py`
+and `srvar/arviz.py`):
+
+```python
+from srvar.xarray import fit_to_xarray, forecast_to_xarray
+
+ds_fit = fit_to_xarray(fit_res)
+ds_fc = forecast_to_xarray(fc)
+```
+
+Conventions:
+- Core dims are `draw`, `time`, `variable` (plus `horizon` for forecasts and `factor` for FSV).
+- Time-varying SV/FSV states are aligned to the full `time` index; the first `p` entries are `NaN`
+  because these states are defined on the effective sample `T - p`.
+- For factor SV, `ds_fit["loadings"]` is an alias of `ds_fit["lambda"]`.
+
+ArviZ (`InferenceData`) integration:
+
+```python
+from srvar.arviz import fit_to_inferencedata
+
+idata = fit_to_inferencedata(fit_res)
+```
+
+### Notebooks
+
+Expository Jupyter notebooks live in `examples/notebooks/` (see `examples/notebooks/README.md`).
+
 ### Steady-State VAR (SSP)
 
 SSP replaces the explicit intercept with a steady-state mean vector `mu`.
@@ -350,12 +380,34 @@ srvar fetch-fred config/fetch_fred_demo_config.yaml --dry-run
 srvar fetch-fred config/fetch_fred_demo_config.yaml --validate-series
 ```
 
+#### Loading saved run artifacts
+
+`srvar run` writes artifacts into the output directory (from `output.out_dir` or `--out`), including:
+
+- `config.yml`
+- `fit_result.npz`
+- `forecast_result.npz` (if forecasting is enabled)
+
+To reload a run later (without re-reading the original CSV), use:
+
+```python
+from srvar.artifacts import load_run_dir
+
+fit_res = load_run_dir("outputs/my_run")
+```
+
+For an end-to-end example (fit → IRF/FEVD/HD, including factor SV), see
+`examples/fsv_structural_analysis.py`.
+
 See:
 
 - `config/demo_config.yaml` (comment-rich template)
 - `config/minimal_config.yaml` (minimal runnable)
 - `config/backtest_demo_config.yaml` (comment-rich backtest template)
 - `config/fetch_fred_demo_config.yaml` (comment-rich FRED fetch template)
+- `config/fsv_demo_config.yaml` (factor SV demo config)
+- `config/elb_fsv_demo_config.yaml` (ELB + factor SV demo config)
+- `config/ssp_fsv_demo_config.yaml` (steady-state + factor SV demo config)
 - `config/carriero2025_backtest_15var_shadow.yaml` (Carriero et al. 2025: shadow-rate VAR baseline config)
 - `papers/carriero2025forecasting/README.md` (replication harness entrypoint)
 
@@ -453,7 +505,7 @@ For full contributor guidelines (including docs builds, style, and testing expec
 ### Limitations and performance notes
 
 - This is currently an **alpha** research toolkit.
-- SV coverage is still evolving: diagonal SV, triangular covariance (time-invariant correlations), and factor SV (time-varying full covariance) are supported. Factor SV is currently limited to `prior.family: "niw"` with RW dynamics and is not yet integrated with ELB, steady-state, or robust shocks.
+- SV coverage is still evolving: diagonal SV, triangular covariance (time-invariant correlations), and factor SV (time-varying full covariance) are supported. Factor SV is currently limited to `prior.family: "niw"` with RW dynamics; ELB, steady-state, and robust shocks are supported.
 - MCMC runtime depends heavily on ``T``, ``N``, and sampler settings (draws/burn-in/thinning).
 - Backtests can stream `metrics.csv` without keeping all forecast draws in RAM (see `output.store_forecasts_in_memory`).
 - Stationarity conditioning is implemented as **rejection** of unstable coefficient draws; this can be expensive for weak priors (see `forecast.stationarity_max_draws` / `backtest.stationarity_max_draws`).
@@ -506,7 +558,7 @@ If you use **srvar-toolkit** in your research, please cite both the software and
   title        = {srvar-toolkit: Shadow-Rate VAR Toolkit for Python},
   year         = {2025},
   url          = {https://github.com/shawcharles/srvar-toolkit},
-  version      = {0.1.0}
+  version      = {0.2.0}
 }
 ```
 

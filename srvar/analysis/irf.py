@@ -562,6 +562,7 @@ def irf_sign_restricted(
     """Compute sign-restricted structural IRFs using random orthonormal rotations.
 
     This uses the standard algorithm:
+
     1) For each posterior draw, compute reduced-form IRFs and a Cholesky factor `P` of the
        contemporaneous covariance.
     2) Draw random orthonormal rotations `Q` (Haar measure) and set the candidate impact matrix

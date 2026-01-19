@@ -1,0 +1,74 @@
+# Demo config: steady-state VAR parameterization (SSP) with factor SV (full covariance)
+#
+# Run:
+#   srvar validate config/ssp_fsv_demo_config.yaml
+#   srvar run config/ssp_fsv_demo_config.yaml
+#
+# Notes:
+# - SSP requires include_intercept: true
+# - model.steady_state.mu0 must have length N (= number of variables)
+# - model.steady_state.v0_mu can be a scalar or list length N
+# - FSV currently supports: volatility.dynamics = "rw", prior.family = "niw"
+#
+
+data:
+  csv_path: "examples/data/example.csv"
+  date_column: "date"
+  variables: ["r", "y"]
+
+model:
+  p: 2
+  include_intercept: true
+
+  # Robust shock models (optional):
+  #
+  # shocks:
+  #   enabled: true
+  #   family: "student_t"
+  #   df: 7.0
+
+  steady_state:
+    mu0: [0.0, 0.0]
+    v0_mu: 0.1
+    ssvs:
+      enabled: false
+      spike_var: 0.0001
+      slab_var: 0.01
+      inclusion_prob: 0.5
+
+  volatility:
+    enabled: true
+    dynamics: "rw"
+    covariance: "factor"
+
+    # For N=2 variables, use k_factors=1.
+    k_factors: 1
+    loading_prior_var: 1.0
+    store_factor_draws: false
+
+    epsilon: 1.0e-4
+    h0_prior_mean: 1.0e-6
+    h0_prior_var: 10.0
+    sigma_eta_prior_nu0: 1.0
+    sigma_eta_prior_s0: 0.01
+
+prior:
+  family: "niw"
+  method: "minnesota"
+
+sampler:
+  draws: 800
+  burn_in: 200
+  thin: 2
+  seed: 42
+
+forecast:
+  horizons: [1, 4, 8]
+  draws: 500
+  quantile_levels: [0.1, 0.5, 0.9]
+
+output:
+  out_dir: "outputs/ssp_fsv_demo_run"
+  save_fit: true
+  save_forecast: true
+  save_plots: false

@@ -331,3 +331,89 @@ def sample_shadow_value_svcov(
     var = 1.0 / a
     mean = b / a
     return truncnorm_rvs_upper(mean=mean, sd=float(np.sqrt(var)), upper=upper, rng=rng)
+
+
+def sample_shadow_value_fsv(
+    *,
+    y: np.ndarray,
+    h_eta: np.ndarray,
+    factor_mean: np.ndarray,
+    t: int,
+    j: int,
+    p: int,
+    beta: np.ndarray,
+    upper: float,
+    include_intercept: bool,
+    rng: np.random.Generator,
+) -> float:
+    """Sample y[t, j] from its full conditional under factor SV (given factors/loadings).
+
+    This is the ELB shadow-rate update for a VAR(p) with factor stochastic volatility,
+    conditioning on the current factor contribution to the mean.
+
+    The conditional likelihood is treated as diagonal given factors/loadings:
+
+        y_t = x_t beta + factor_mean_t + eta_t
+        eta_t ~ N(0, diag(exp(h_eta_t)))
+
+    where ``factor_mean_t`` corresponds to ``Lambda f_t`` evaluated at the current Gibbs state.
+
+    The only constraint is: ``y[t, j] <= upper``.
+    """
+    y = np.asarray(y, dtype=float)
+    ht = np.asarray(h_eta, dtype=float)
+    fm = np.asarray(factor_mean, dtype=float)
+    beta = np.asarray(beta, dtype=float)
+
+    t_max, n = y.shape
+    if ht.shape != y.shape:
+        raise ValueError("h_eta must have the same shape as y")
+    if fm.shape != y.shape:
+        raise ValueError("factor_mean must have the same shape as y")
+    if not (0 <= j < n):
+        raise ValueError("j out of range")
+    if not (0 <= t < t_max):
+        raise ValueError("t out of range")
+    if p < 1:
+        raise ValueError("p must be >= 1")
+
+    a = 0.0
+    b = 0.0
+
+    s_start = max(p, t)
+    s_end = min(t_max - 1, t + p)
+
+    y_curr = float(y[t, j])
+
+    for s in range(s_start, s_end + 1):
+        x_s = _x_row(y, t=s, p=p, include_intercept=include_intercept)
+        mu_s = x_s @ beta + fm[s]
+
+        if s == t:
+            w = float(np.exp(-ht[s, j]))
+            a += w
+            b += w * float(mu_s[j])
+            continue
+
+        lag = s - t
+        if not (1 <= lag <= p):
+            continue
+
+        k0 = 1 if include_intercept else 0
+        idx = k0 + (lag - 1) * n + j
+
+        for i in range(n):
+            d = float(beta[idx, i])
+            if d == 0.0:
+                continue
+            w = float(np.exp(-ht[s, i]))
+            r_base = float(y[s, i] - mu_s[i] + d * y_curr)
+            a += w * d * d
+            b += w * d * r_base
+
+    if a <= 0.0 or not np.isfinite(a):
+        raise RuntimeError("non-positive or invalid conditional precision")
+
+    var = 1.0 / a
+    mean = b / a
+    return truncnorm_rvs_upper(mean=mean, sd=float(np.sqrt(var)), upper=upper, rng=rng)

@@ -70,12 +70,21 @@ def fit(
         rng = np.random.default_rng()
 
     if model.shocks is not None and model.shocks.family != "gaussian":
-        if model.elb is not None and model.elb.enabled:
-            raise ValueError("robust shocks are not supported with ELB (model.elb) yet")
-        if model.volatility is not None and model.volatility.enabled:
-            raise ValueError("robust shocks are not supported with stochastic volatility yet")
-        if model.steady_state is not None:
-            raise ValueError("robust shocks are not supported with steady_state yet")
+        vol = model.volatility
+        vol_factor = vol is not None and vol.enabled and vol.covariance == "factor"
+        if model.elb is not None and model.elb.enabled and not vol_factor:
+            raise ValueError(
+                "robust shocks with ELB require factor SV (volatility.covariance='factor')"
+            )
+        if model.steady_state is not None and not vol_factor:
+            raise ValueError(
+                "robust shocks with steady_state require factor SV (volatility.covariance='factor')"
+            )
+        if vol is not None and vol.enabled and not vol_factor:
+            raise ValueError(
+                "robust shocks are currently supported only with factor SV "
+                "(volatility.covariance='factor')"
+            )
 
     if model.volatility is not None and model.volatility.enabled:
         if prior_family not in {"niw", "blasso", "dl"}:
@@ -416,6 +425,20 @@ def forecast(
                 f_step = rng.normal(size=k) * np.exp(0.5 * h_f_curr)
                 eta_step = rng.normal(size=fit.dataset.N) * np.exp(0.5 * h_eta_curr)
                 eps = lam @ f_step + eta_step
+
+                if fit.model.shocks is not None and fit.model.shocks.family != "gaussian":
+                    fam = str(fit.model.shocks.family).lower()
+                    if fam == "student_t":
+                        nu = float(fit.model.shocks.df)
+                        lam_shock = float(rng.gamma(shape=0.5 * nu, scale=2.0 / nu))
+                        eps = eps / float(np.sqrt(lam_shock))
+                    elif fam == "mixture_outlier":
+                        prob = float(fit.model.shocks.outlier_prob)
+                        kappa = float(fit.model.shocks.outlier_variance)
+                        is_outlier = bool(rng.uniform() < prob)
+                        eps = eps * (float(np.sqrt(kappa)) if is_outlier else 1.0)
+                    else:  # pragma: no cover
+                        raise ValueError(f"unknown shocks.family: {fit.model.shocks.family}")
 
                 y_next = mean + eps
                 path[h_step] = y_next

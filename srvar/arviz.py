@@ -20,7 +20,11 @@ def fit_to_inferencedata(fit: Any) -> Any:
 
     ds = fit_to_xarray(fit)
 
-    posterior_vars = [name for name in ds.data_vars if "draw" in ds[name].dims]
+    posterior_vars = [
+        name
+        for name in ds.data_vars
+        if "draw" in ds[name].dims and not ds[name].attrs.get("alias_of")
+    ]
     posterior = ds[posterior_vars].expand_dims(chain=[0])
 
     obs_vars = [name for name in ["y"] if name in ds.data_vars]

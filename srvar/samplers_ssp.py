@@ -144,6 +144,79 @@ def sample_steady_state_mu_svrw(
     return mu_hat + chol @ rng.standard_normal(n)
 
 
+def sample_steady_state_mu_fsv(
+    *,
+    y: np.ndarray,
+    beta: np.ndarray,
+    h_eta: np.ndarray,
+    factor_mean: np.ndarray,
+    mu0: np.ndarray,
+    v0_mu: float | np.ndarray,
+    p: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Sample the steady-state mean mu under factor SV (conditioning on factor contributions).
+
+    This is the steady-state update for a VAR(p) with factor stochastic volatility, where the
+    conditional (idiosyncratic) likelihood is diagonal given the factor contribution:
+
+        y_t = c(mu, A) + sum_i A_i y_{t-i} + factor_mean_t + eta_t
+        eta_t ~ N(0, diag(exp(h_eta_t)))
+
+    The update is analogous to :func:`sample_steady_state_mu_svrw`, but replaces residuals
+    ``r_t`` with ``r_t - factor_mean_t``.
+    """
+    yt = np.asarray(y, dtype=float)
+    b = np.asarray(beta, dtype=float)
+    ht = np.asarray(h_eta, dtype=float)
+    fm = np.asarray(factor_mean, dtype=float)
+    m0 = np.asarray(mu0, dtype=float).reshape(-1)
+
+    if yt.ndim != 2:
+        raise ValueError("y must be 2D")
+    n = int(yt.shape[1])
+    if b.shape != (n * int(p), n):
+        raise ValueError("beta must have shape (N*p, N)")
+    if m0.shape != (n,):
+        raise ValueError("mu0 must have shape (N,)")
+
+    if isinstance(v0_mu, (float, int, np.floating, np.integer)) and not isinstance(v0_mu, bool):
+        v_mu = np.full(n, float(v0_mu), dtype=float)
+    else:
+        v_mu = np.asarray(v0_mu, dtype=float).reshape(-1)
+        if v_mu.shape != (n,):
+            raise ValueError("v0_mu must be a scalar or have shape (N,)")
+    if np.any(~np.isfinite(v_mu)) or np.any(v_mu <= 0):
+        raise ValueError("v0_mu must be finite and > 0")
+
+    x_lags, y_tgt = design_matrix(yt, int(p), include_intercept=False)
+    r = y_tgt - x_lags @ b
+
+    if fm.shape != r.shape:
+        raise ValueError("factor_mean must have shape (T-p, N) matching residuals")
+    if ht.shape != r.shape:
+        raise ValueError("h_eta must have shape (T-p, N) matching residuals")
+    r = r - fm
+
+    a_sum = _asum_from_beta(beta=b, n=n, p=int(p))
+    bmat = np.eye(n, dtype=float) - a_sum
+
+    inv_v0 = np.diag(1.0 / v_mu)
+    precision = inv_v0.copy()
+    rhs = inv_v0 @ m0
+
+    for t in range(r.shape[0]):
+        inv_sigma_t = np.diag(np.exp(-ht[t, :]))
+        precision += bmat.T @ inv_sigma_t @ bmat
+        rhs += bmat.T @ inv_sigma_t @ r[t, :]
+
+    precision = symmetrize(precision)
+    v_post = solve_psd(precision, np.eye(n, dtype=float))
+    mu_hat = v_post @ rhs
+    chol = cholesky_jitter(symmetrize(v_post))
+    return mu_hat + chol @ rng.standard_normal(n)
+
+
 def sample_mu_gamma(
     *,
     mu: np.ndarray,

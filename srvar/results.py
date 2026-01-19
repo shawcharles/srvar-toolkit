@@ -53,7 +53,7 @@ class FitResult:
     sv_gamma0_draws: np.ndarray | None = None  # (D, N)
     sv_phi_draws: np.ndarray | None = None  # (D, N)
     # Factor stochastic volatility (FSV) extras (when model.volatility.covariance == "factor")
-    lambda_draws: np.ndarray | None = None  # (D, N, k)
+    lambda_draws: np.ndarray | None = None  # (D, N, k) factor loadings (Lambda)
     factor_draws: np.ndarray | None = None  # (D, T, k)
     h_factor_draws: np.ndarray | None = None  # (D, T, k)
     h0_factor_draws: np.ndarray | None = None  # (D, k)
@@ -61,6 +61,14 @@ class FitResult:
     gamma_draws: np.ndarray | None = None  # (D, K)
     mu_draws: np.ndarray | None = None  # (D, N)
     mu_gamma_draws: np.ndarray | None = None  # (D, N)
+
+    @property
+    def loading_draws(self) -> np.ndarray | None:
+        """Alias for factor SV loading draws (Lambda).
+
+        This mirrors ``lambda_draws`` (kept for backwards compatibility).
+        """
+        return self.lambda_draws
 
 
 @dataclass(frozen=True, slots=True)

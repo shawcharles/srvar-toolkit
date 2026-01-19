@@ -140,8 +140,10 @@ model:
 ```
 
 Notes / current limitations:
-- Robust shocks are currently supported only for **homoskedastic VARs** (no `model.volatility`).
-- Robust shocks are not yet supported with `model.elb` or `model.steady_state`.
+- Robust shocks are supported for **homoskedastic VARs** and for **factor SV**
+  (`model.volatility.covariance: "factor"`).
+- Robust shocks are not yet supported for diagonal/triangular SV.
+- Robust shocks with `model.elb` or `model.steady_state` require factor SV.
 
 ## `prior`
 

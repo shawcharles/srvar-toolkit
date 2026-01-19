@@ -4,6 +4,8 @@ This folder contains runnable scripts demonstrating common `srvar-toolkit` workf
 
 Most examples use `examples/data/example.csv` so you can run them as-is.
 
+For narrative Jupyter notebooks, see `examples/notebooks/` (and `examples/notebooks/README.md`).
+
 ## Recommended order
 
 1. `quickstart_check_version.py`
