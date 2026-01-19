@@ -110,6 +110,7 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | **ELB-Censored Evaluation** | Floor realized values and (optionally) forecast draws at an ELB to match interest-rate scoring conventions | `evaluation.elb_censor` (backtest) | Supported |
 | **WIS (Weighted Interval Score)** | Draw-based WIS for probabilistic forecast evaluation | `evaluation.wis` (backtest) | Supported |
 | **Model Comparison (DM test)** | Diebold–Mariano test with Newey–West/HAC variance for comparing loss series | `srvar.stats.diebold_mariano_test(...)` | Supported |
+| **Model Comparison (GW test)** | Giacomini–White conditional predictive ability test (MATLAB-compatible NW covariance) | `srvar.stats.giacomini_white_test(...)` | Supported |
 | **Forecast Pooling (Ensembles)** | Combine multiple predictive distributions via weighted mixtures | `srvar.ensemble.pool_forecasts(...)` | Supported |
 | **Replication Harness** | Starter configs + scripts for Carriero et al. (2025) baselines | `papers/carriero2025forecasting/` | Supported |
 

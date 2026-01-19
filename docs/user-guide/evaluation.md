@@ -168,6 +168,22 @@ print(res.statistic, res.pvalue)
 This uses a Newey–West/HAC variance estimate (default lag `horizon-1`) and an optional
 Harvey–Leybourne–Newbold small-sample correction.
 
+## Model comparison (Giacomini–White)
+
+To match the “CPA test” convention used in some macro forecast-comparison papers (including the
+MATLAB replication code included with this repo), use:
+
+```python
+from srvar.stats import giacomini_white_test
+
+res = giacomini_white_test(loss_model_a, loss_model_b, horizon=12, choice="conditional")
+print(res.statistic, res.pvalue, res.significance_code)
+```
+
+`choice="unconditional"` uses a constant instrument (closer to a DM-style test), while
+`choice="conditional"` uses a constant plus a lagged loss differential as instruments (the
+standard conditional predictive ability setup).
+
 ## Forecast combinations (pooling)
 
 For simple forecast combinations (ensembles), you can pool predictive draws across models:
