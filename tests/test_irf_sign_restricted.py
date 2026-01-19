@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from srvar import VolatilitySpec
 from srvar.analysis import irf_sign_restricted
 from srvar.data.dataset import Dataset
 from srvar.results import FitResult
@@ -96,3 +97,51 @@ def test_irf_sign_restricted_zero_restriction_is_infeasible_in_1d() -> None:
             stationarity_max_draws=1,
             rng=np.random.default_rng(0),
         )
+
+
+def test_irf_sign_restricted_supports_factor_sv_covariance_state() -> None:
+    ds = Dataset.from_arrays(values=np.zeros((3, 2), dtype=float), variables=["y1", "y2"])
+    model = ModelSpec(
+        p=1,
+        include_intercept=True,
+        volatility=VolatilitySpec(enabled=True, covariance="factor", dynamics="rw", k_factors=1),
+    )
+    prior = PriorSpec.niw_default(k=1 + ds.N * model.p, n=ds.N)
+    sampler = SamplerConfig(draws=1, burn_in=0, thin=1)
+
+    beta = np.array(
+        [
+            [0.0, 0.0],  # intercept
+            [0.5, 0.0],  # y1_{t-1}
+            [0.0, 0.25],  # y2_{t-1}
+        ],
+        dtype=float,
+    )
+    h_eta = np.array([[0.0, 0.0], [0.0, np.log(9.0)]], dtype=float)[None, :, :]
+    h_f = np.array([[0.0], [np.log(4.0)]], dtype=float)[None, :, :]
+    lam = np.array([[1.0], [0.5]], dtype=float)[None, :, :]
+
+    fit = FitResult(
+        dataset=ds,
+        model=model,
+        prior=prior,
+        sampler=sampler,
+        posterior=None,
+        beta_draws=beta[None, :, :],
+        h_draws=h_eta,
+        lambda_draws=lam,
+        h_factor_draws=h_f,
+    )
+
+    res = irf_sign_restricted(
+        fit,
+        horizons=1,
+        restrictions={},
+        draws=3,
+        max_attempts=1,
+        quantile_levels=[0.5],
+        rng=np.random.default_rng(0),
+    )
+    assert res.identification == "sign_restricted"
+    assert res.draws.shape == (3, 2, 2, 2)
+    assert np.all(np.isfinite(res.draws))

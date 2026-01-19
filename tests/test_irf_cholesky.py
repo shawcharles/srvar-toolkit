@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from srvar import VolatilitySpec
 from srvar.analysis import irf_cholesky, irf_reduced_form
 from srvar.data.dataset import Dataset
 from srvar.results import FitResult
@@ -112,3 +113,54 @@ def test_irf_stationarity_reject_raises_when_no_stationary_draws() -> None:
     )
     with pytest.raises(ValueError, match="no stationary coefficient draws"):
         _ = irf_reduced_form(fit, horizons=1, stationarity="reject", rng=np.random.default_rng(0))
+
+
+def test_irf_cholesky_supports_factor_sv_covariance_state() -> None:
+    beta = np.array(
+        [
+            [0.0, 0.0],  # intercept
+            [0.5, 0.0],  # y1_{t-1}
+            [0.0, 0.25],  # y2_{t-1}
+        ],
+        dtype=float,
+    )
+
+    variables = ["y1", "y2"]
+    ds = Dataset.from_arrays(values=np.zeros((3, 2), dtype=float), variables=variables)
+    model = ModelSpec(
+        p=1,
+        include_intercept=True,
+        volatility=VolatilitySpec(enabled=True, covariance="factor", dynamics="rw", k_factors=1),
+    )
+    prior = PriorSpec.niw_default(k=1 + len(variables) * model.p, n=len(variables))
+    sampler = SamplerConfig(draws=1, burn_in=0, thin=1)
+
+    # Effective-sample volatility states (T - p).
+    h_eta = np.array([[0.0, 0.0], [0.0, np.log(9.0)]], dtype=float)[None, :, :]
+    h_f = np.array([[0.0], [np.log(4.0)]], dtype=float)[None, :, :]
+    lam = np.array([[1.0], [0.5]], dtype=float)[None, :, :]
+
+    fit = FitResult(
+        dataset=ds,
+        model=model,
+        prior=prior,
+        sampler=sampler,
+        posterior=None,
+        beta_draws=beta[None, :, :],
+        h_draws=h_eta,
+        lambda_draws=lam,
+        h_factor_draws=h_f,
+    )
+
+    res = irf_cholesky(
+        fit,
+        horizons=0,
+        draws=1,
+        shock_scale="one_sd",
+        quantile_levels=[0.5],
+        rng=np.random.default_rng(0),
+    )
+
+    sigma0 = np.array([[5.0, 2.0], [2.0, 10.0]], dtype=float)
+    impact = np.linalg.cholesky(sigma0)
+    assert np.allclose(res.mean[0], impact)

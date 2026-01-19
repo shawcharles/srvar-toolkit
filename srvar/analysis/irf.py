@@ -145,6 +145,8 @@ def _sigma0_from_components(
     sigma_draws: np.ndarray | None,
     h_draws: np.ndarray | None,
     q_draws: np.ndarray | None,
+    lambda_draws: np.ndarray | None = None,
+    h_factor_draws: np.ndarray | None = None,
     draw_index: int,
 ) -> np.ndarray:
     if sigma_draws is not None:
@@ -152,6 +154,26 @@ def _sigma0_from_components(
 
     if h_draws is None:
         raise ValueError("missing volatility state draws required to build covariance")
+
+    if lambda_draws is not None:
+        if h_factor_draws is None:
+            raise ValueError("missing factor volatility state draws required to build covariance")
+        lam = np.asarray(lambda_draws[draw_index], dtype=float)
+        h_eta_last = np.asarray(h_draws[draw_index, -1, :], dtype=float).reshape(-1)
+        h_f_last = np.asarray(h_factor_draws[draw_index, -1, :], dtype=float).reshape(-1)
+
+        if lam.ndim != 2:
+            raise ValueError("lambda_draws must have shape (D, N, k)")
+        n = int(lam.shape[0])
+        if h_eta_last.shape != (n,):
+            raise ValueError("h_draws has wrong shape for factor SV covariance")
+        k = int(lam.shape[1])
+        if h_f_last.shape != (k,):
+            raise ValueError("h_factor_draws has wrong shape for factor SV covariance")
+
+        sigma0 = lam @ np.diag(np.exp(h_f_last)) @ lam.T + np.diag(np.exp(h_eta_last))
+        return 0.5 * (sigma0 + sigma0.T)
+
     h_last = np.asarray(h_draws[draw_index, -1, :], dtype=float).reshape(-1)
     if q_draws is None:
         return np.diag(np.exp(h_last))
@@ -400,6 +422,14 @@ def irf_cholesky(
         )
         h_draws = np.asarray(fit.h_draws[idx], dtype=float) if fit.h_draws is not None else None
         q_draws = np.asarray(fit.q_draws[idx], dtype=float) if fit.q_draws is not None else None
+        lambda_draws = (
+            np.asarray(fit.lambda_draws[idx], dtype=float) if fit.lambda_draws is not None else None
+        )
+        h_factor_draws = (
+            np.asarray(fit.h_factor_draws[idx], dtype=float)
+            if fit.h_factor_draws is not None
+            else None
+        )
         metadata["draw_source"] = "stored"
     else:
         if fit.posterior is None:
@@ -458,6 +488,8 @@ def irf_cholesky(
 
         h_draws = None
         q_draws = None
+        lambda_draws = None
+        h_factor_draws = None
 
     d_used = int(beta_draws.shape[0])
     n = int(fit.dataset.N)
@@ -476,6 +508,8 @@ def irf_cholesky(
             sigma_draws=sigma_draws,
             h_draws=h_draws,
             q_draws=q_draws,
+            lambda_draws=lambda_draws,
+            h_factor_draws=h_factor_draws,
             draw_index=d,
         )
 
@@ -649,6 +683,16 @@ def irf_sign_restricted(
         )
         h_pool = np.asarray(fit.h_draws[idx_pool], dtype=float) if fit.h_draws is not None else None
         q_pool = np.asarray(fit.q_draws[idx_pool], dtype=float) if fit.q_draws is not None else None
+        lambda_pool = (
+            np.asarray(fit.lambda_draws[idx_pool], dtype=float)
+            if fit.lambda_draws is not None
+            else None
+        )
+        h_factor_pool = (
+            np.asarray(fit.h_factor_draws[idx_pool], dtype=float)
+            if fit.h_factor_draws is not None
+            else None
+        )
         metadata["draw_source"] = "stored"
 
         accepted = 0
@@ -660,6 +704,8 @@ def irf_sign_restricted(
                 sigma_draws=sigma_pool,
                 h_draws=h_pool,
                 q_draws=q_pool,
+                lambda_draws=lambda_pool,
+                h_factor_draws=h_factor_pool,
                 draw_index=pool_i,
             )
             sigma0 = np.asarray(sigma0, dtype=float)[np.ix_(order_idx, order_idx)]

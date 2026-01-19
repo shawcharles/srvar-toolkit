@@ -157,6 +157,16 @@ def historical_decomposition_cholesky(
         q_draws = (
             np.asarray(fit.q_draws[idx_draws], dtype=float) if fit.q_draws is not None else None
         )
+        lambda_draws = (
+            np.asarray(fit.lambda_draws[idx_draws], dtype=float)
+            if fit.lambda_draws is not None
+            else None
+        )
+        h_factor_draws = (
+            np.asarray(fit.h_factor_draws[idx_draws], dtype=float)
+            if fit.h_factor_draws is not None
+            else None
+        )
         metadata["draw_source"] = "stored"
     else:
         if fit.posterior is None:
@@ -217,6 +227,8 @@ def historical_decomposition_cholesky(
 
         h_draws = None
         q_draws = None
+        lambda_draws = None
+        h_factor_draws = None
 
     d_used = int(beta_draws.shape[0])
     t_eff = int(t - p)
@@ -263,8 +275,12 @@ def historical_decomposition_cholesky(
             if h_draws is None:
                 raise ValueError("missing volatility state draws required for decomposition")
             h = np.asarray(h_draws[d], dtype=float)
-            if h.shape != (t, n):
-                raise ValueError("h_draws must have shape (T, N)")
+            if h.shape == (t, n):
+                h_eff = h[p:, :]
+            elif h.shape == (t_eff, n):
+                h_eff = h
+            else:
+                raise ValueError("h_draws must have shape (T, N) or (T - p, N)")
 
             cov_mode = getattr(fit.model.volatility, "covariance", "diagonal")
             if cov_mode == "triangular":
@@ -282,7 +298,7 @@ def historical_decomposition_cholesky(
                 eps = np.empty_like(resid, dtype=float)
                 impacts = np.empty((t_eff, n, n), dtype=float)
                 for tt in range(t_eff):
-                    ht = h[p + tt, :]
+                    ht = h_eff[tt, :]
                     d_sqrt = np.exp(0.5 * ht)
                     a = inv_q * d_sqrt.reshape(1, -1)
                     sigma_t = (a @ a.T)[np.ix_(idx, idx)]
@@ -290,9 +306,43 @@ def historical_decomposition_cholesky(
                     impacts[tt] = l_t
                     eps[tt] = np.linalg.solve(l_t, resid[tt])
                 impacts_t = impacts
+            elif cov_mode == "factor":
+                if lambda_draws is None or h_factor_draws is None:
+                    raise ValueError(
+                        "factor SV decomposition requires fit.lambda_draws and fit.h_factor_draws"
+                    )
+                lam = np.asarray(lambda_draws[d], dtype=float)
+                if lam.ndim != 2:
+                    raise ValueError("lambda_draws must have shape (D, N, k)")
+                if lam.shape[0] != n:
+                    raise ValueError("lambda_draws has wrong N dimension")
+                k = int(lam.shape[1])
+
+                hf = np.asarray(h_factor_draws[d], dtype=float)
+                if hf.shape == (t, k):
+                    hf_eff = hf[p:, :]
+                elif hf.shape == (t_eff, k):
+                    hf_eff = hf
+                else:
+                    raise ValueError("h_factor_draws must have shape (T, k) or (T - p, k)")
+
+                lam_perm = lam[idx, :]  # permute to match y/resid ordering
+                h_eta_perm = h_eff[:, idx]
+
+                eps = np.empty_like(resid, dtype=float)
+                impacts = np.empty((t_eff, n, n), dtype=float)
+                for tt in range(t_eff):
+                    sigma_t = (
+                        lam_perm @ np.diag(np.exp(hf_eff[tt, :])) @ lam_perm.T
+                        + np.diag(np.exp(h_eta_perm[tt, :]))
+                    )
+                    sigma_t = 0.5 * (sigma_t + sigma_t.T)
+                    l_t = cholesky_jitter(sigma_t)
+                    impacts[tt] = l_t
+                    eps[tt] = np.linalg.solve(l_t, resid[tt])
+                impacts_t = impacts
             else:
-                h_perm = h[:, idx]
-                scale = np.exp(0.5 * h_perm[p:, :])
+                scale = np.exp(0.5 * h_eff[:, idx])
                 eps = resid / scale
                 impacts = np.zeros((t_eff, n, n), dtype=float)
                 for i in range(n):

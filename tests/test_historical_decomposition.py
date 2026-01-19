@@ -17,6 +17,8 @@ def _make_fit(
     sigma_draws: np.ndarray | None = None,
     h_draws: np.ndarray | None = None,
     q_draws: np.ndarray | None = None,
+    lambda_draws: np.ndarray | None = None,
+    h_factor_draws: np.ndarray | None = None,
 ) -> FitResult:
     k = int(beta_draws.shape[1])
     n = int(dataset.N)
@@ -32,6 +34,8 @@ def _make_fit(
         sigma_draws=None if sigma_draws is None else np.asarray(sigma_draws, dtype=float),
         h_draws=None if h_draws is None else np.asarray(h_draws, dtype=float),
         q_draws=None if q_draws is None else np.asarray(q_draws, dtype=float),
+        lambda_draws=None if lambda_draws is None else np.asarray(lambda_draws, dtype=float),
+        h_factor_draws=None if h_factor_draws is None else np.asarray(h_factor_draws, dtype=float),
     )
 
 
@@ -120,3 +124,71 @@ def test_historical_decomposition_defaults_to_latent_for_elb() -> None:
 
     with pytest.raises(ValueError, match="fit\\.latent_dataset"):
         _ = historical_decomposition_cholesky(fit, draws=1, rng=np.random.default_rng(0))
+
+
+def test_historical_decomposition_cholesky_supports_factor_sv() -> None:
+    rng = np.random.default_rng(0)
+    t = 8
+    p = 1
+    n = 2
+    t_eff = t - p
+
+    a = np.array([[0.5, 0.0], [0.0, 0.25]], dtype=float)
+    beta = np.array(
+        [
+            [0.0, 0.0],  # intercept
+            [0.5, 0.0],  # y1_{t-1}
+            [0.0, 0.25],  # y2_{t-1}
+        ],
+        dtype=float,
+    )
+
+    lam = np.array([[1.0], [0.5]], dtype=float)
+
+    # Effective-sample log-variance states (T - p).
+    h_f = np.linspace(np.log(0.5), np.log(2.0), t_eff, dtype=float)  # (T - p,)
+    h_eta = np.column_stack(
+        [
+            np.linspace(np.log(1.0), np.log(3.0), t_eff, dtype=float),
+            np.linspace(np.log(2.0), np.log(4.0), t_eff, dtype=float),
+        ]
+    )
+
+    y = np.zeros((t, n), dtype=float)
+    y[0] = np.array([1.0, -1.0], dtype=float)
+    z = rng.standard_normal((t_eff, n))
+    for tt in range(t_eff):
+        sigma_t = (
+            lam @ np.diag(np.exp([h_f[tt]])) @ lam.T + np.diag(np.exp(h_eta[tt, :]))
+        )
+        l_t = np.linalg.cholesky(sigma_t)
+        eps_t = l_t @ z[tt]
+        y[tt + 1] = a @ y[tt] + eps_t
+
+    ds = Dataset.from_arrays(values=y, variables=["y1", "y2"])
+    fit = _make_fit(
+        dataset=ds,
+        model=ModelSpec(
+            p=p,
+            include_intercept=True,
+            volatility=VolatilitySpec(
+                enabled=True,
+                covariance="factor",
+                dynamics="rw",
+                k_factors=1,
+            ),
+        ),
+        beta_draws=beta[None, :, :],
+        h_draws=h_eta.reshape(1, t_eff, n),
+        lambda_draws=lam.reshape(1, n, 1),
+        h_factor_draws=h_f.reshape(1, t_eff, 1),
+    )
+
+    hd = historical_decomposition_cholesky(
+        fit,
+        draws=1,
+        quantile_levels=[0.5],
+        rng=np.random.default_rng(1),
+    )
+    assert float(hd.metadata["reconstruction_max_abs_error"]) < 1e-10
+    assert np.allclose(hd.shock_draws[0], z, atol=1e-10)

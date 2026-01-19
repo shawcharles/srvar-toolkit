@@ -24,6 +24,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Optional `xarray` conversion utilities for labeled outputs (`srvar.xarray`).
 - Optional ArviZ conversion utilities for `InferenceData` outputs (`srvar.arviz`).
 - Factor SV demo config (`config/fsv_demo_config.yaml`) and example script (`examples/fsv_fit_forecast.py`).
+- Structural analysis supports factor SV covariance states (Cholesky IRFs, sign-restricted IRFs, FEVD, historical decomposition).
+- `srvar.artifacts.load_run_dir(out_dir)` to reconstruct a `FitResult` from `config.yml` + `fit_result.npz` (including factor SV draws and optional latent dataset / NIW posterior blocks).
 - ELB-censored backtest evaluation via `evaluation.elb_censor` (censor realized values and optionally forecast draws).
 - Streaming backtest evaluation for `metrics.csv` via `output.store_forecasts_in_memory` (reduces RAM for long runs).
 - Synthetic memory benchmark script (`scripts/benchmark_backtest_memory.py`).

@@ -13,11 +13,12 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 5. `sv_fit_forecast.py`
 6. `sv_triangular_fit_forecast.py`
 7. `fsv_fit_forecast.py`
-8. `elb_sv_fit_forecast.py`
-9. `elb_sv_fit_forecast_plots.py`
-10. `blasso.py`
-11. `dl_fit_forecast.py`
-12. `conditional_forecast.py`
+8. `fsv_structural_analysis.py`
+9. `elb_sv_fit_forecast.py`
+10. `elb_sv_fit_forecast_plots.py`
+11. `blasso.py`
+12. `dl_fit_forecast.py`
+13. `conditional_forecast.py`
 
 ## Scripts
 
@@ -44,6 +45,9 @@ Most examples use `examples/data/example.csv` so you can run them as-is.
 
 - `fsv_fit_forecast.py`
   Fits a factor stochastic volatility (FSV) VAR, forecasts forward, and optionally emits `xarray` outputs.
+
+- `fsv_structural_analysis.py`
+  Fits an FSV model and computes Cholesky IRFs, FEVD, and historical decomposition.
 
 - `elb_sv_fit_forecast.py`
   Loads `examples/data/example.csv`, fits a combined ELB + stochastic volatility model, and forecasts forward.
