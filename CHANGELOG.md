@@ -6,7 +6,68 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
-> TODO: Add changes here as development continues.
+## [0.3.0] - 2026-04-06
+
+### Added
+
+- Explicit legacy Minnesota-style NIW prior path via `PriorSpec.niw_minnesota_legacy(...)` and
+  `prior.method: "minnesota_legacy"` in YAML configs. `PriorSpec.niw_minnesota(...)` and
+  `prior.method: "minnesota"` remain as backward-compatible aliases.
+- Explicit canonical Minnesota prior path via `PriorSpec.niw_minnesota_canonical(...)` and
+  `prior.method: "minnesota_canonical"` for homoskedastic models and diagonal stochastic
+  volatility.
+- Explicit experimental tempered Minnesota bridge via `PriorSpec.niw_minnesota_tempered(...)`
+  and `prior.method: "minnesota_tempered"` for diagonal stochastic-volatility models.
+- Reproducible Minnesota backtest comparison harness via
+  `scripts/compare_minnesota_backtests.py`, which runs paired legacy/canonical backtests and
+  writes a combined `metrics_comparison.csv`.
+- Consolidated Minnesota benchmark summary script via
+  `scripts/summarize_minnesota_comparisons.py`, which scans paired comparison bundles and writes
+  repo-level `summary.csv` and `summary.md` tables.
+- Variable-level Minnesota comparison summary script via
+  `scripts/summarize_metrics_comparison_by_variable.py`, which aggregates one
+  `metrics_comparison.csv` file across horizons and writes `variable_summary.csv` and
+  `variable_summary.md`.
+- Forecast-dispersion comparison script via `scripts/compare_forecast_dispersion.py`, plus a
+  `--save-forecasts` option on `scripts/compare_minnesota_backtests.py` for diagnostic reruns
+  that need per-origin predictive draw artifacts.
+- Forecast-mean-vs-realized comparison script via `scripts/compare_forecast_means_to_realized.py`
+  for origin-by-origin diagnostic summaries from saved forecast bundles.
+- `scripts/compare_forecast_means_to_realized.py` now supports `--cases` and optional detail
+  outputs for narrow origin-level deep dives on selected variable/horizon pairs.
+- Single-origin Minnesota fit diagnostic via `scripts/diagnose_minnesota_origin.py`, which
+  reproduces one scheduled backtest origin as paired baseline/candidate fits and writes fit
+  artifacts plus state, forecast, and coefficient comparison tables.
+- Posterior coefficient-draw comparison script via `scripts/compare_fit_coefficients.py` for
+  selected `VARIABLE:REGRESSOR` cases from paired fit runs.
+- Prior-scale diagnostic via `scripts/diagnose_minnesota_prior_scales.py` for comparing legacy
+  and canonical Minnesota coefficient variances at one scheduled backtest origin.
+- Tempered-origin experiment via `scripts/experiment_tempered_minnesota_origin.py`, which runs a
+  three-way legacy/canonical/tempered Minnesota comparison for one scheduled origin.
+- Local quarterly benchmark prep/config via `scripts/prepare_term_nfci_benchmark.py` and
+  `config/term_nfci_backtest.yaml` for a second fully local Minnesota comparison run.
+- Homoskedastic companion benchmark config via `config/term_nfci_backtest_homoskedastic.yaml`
+  to compare canonical vs legacy Minnesota on the same local panel without stochastic volatility.
+- Richer three-variable local benchmark prep/config via
+  `scripts/prepare_term_nfci_wuxia_benchmark.py` and `config/term_nfci_wuxia_backtest.yaml`.
+- Local transformed quarterly 15-variable macro benchmark prep/config via
+  `scripts/prepare_vintage_macro15_benchmark.py` and
+  `config/vintage_macro15_backtest_homoskedastic.yaml`.
+- Diagonal-SV companion config for the local transformed 15-variable vintage benchmark via
+  `config/vintage_macro15_backtest_diagonal_sv.yaml`.
+
+### Changed
+
+- Source docs and example configs now label the shipped Minnesota-style NIW construction as a
+  legacy, non-canonical compatibility path, and document the support boundary for the explicit
+  canonical path.
+
+### Fixed
+
+- Backtest metrics and plotting diagnostics now exclude missing realized values from evaluation
+  denominators instead of treating them as misses.
+- `config/backtest_demo_config.yaml` now parses as valid YAML again; the sample had a top-level
+  indentation error before the `output` block.
 
 ## [0.2.0] - 2026-01-19
 

@@ -40,7 +40,7 @@ The top-level keys map directly to the core Python objects:
 
 - `data`: input CSV and variable selection
 - `model`: `ModelSpec` (lag order, intercept, optional `elb`, optional `volatility`)
-- `prior`: `PriorSpec` (e.g. NIW defaults or Minnesota-style)
+- `prior`: `PriorSpec` (e.g. NIW defaults or legacy Minnesota-style NIW shrinkage)
 - `sampler`: `SamplerConfig` (draws/burn-in/thin/seed)
 - `forecast` (optional): forecast horizons/draws/quantiles
 - `backtest` (optional): rolling/expanding refit settings and forecast horizons
@@ -83,7 +83,15 @@ The backtest config is intentionally CLI-first and is designed to be reproducibl
 Use NIW when you want fast, stable inference and do not need variable selection.
 
 - Use `PriorSpec.niw_default(k=..., n=...)` for a simple default prior.
-- Use `PriorSpec.niw_minnesota(p=..., y=..., include_intercept=...)` to get Minnesota-style shrinkage.
+- Use `PriorSpec.niw_minnesota_legacy(p=..., y=..., include_intercept=...)` for the current legacy Minnesota-style NIW shrinkage path.
+- Use `PriorSpec.niw_minnesota_canonical(p=..., y=..., include_intercept=...)` when you need equation-specific own-vs-cross Minnesota shrinkage and the model is homoskedastic or diagonal SV.
+- Use `PriorSpec.niw_minnesota_tempered(p=..., y=..., include_intercept=..., alpha=0.25)` when you want the experimental legacy-to-canonical bridge on diagonal SV.
+
+`PriorSpec.niw_minnesota(...)` is kept as a backward-compatible alias for
+`PriorSpec.niw_minnesota_legacy(...)`. `PriorSpec.niw_minnesota_canonical(...)` is an explicit
+opt-in path; triangular and factor SV remain on the legacy NIW implementation.
+`PriorSpec.niw_minnesota_tempered(...)` is also opt-in, experimental, and currently restricted
+to diagonal stochastic volatility.
 
 ### SSVS
 

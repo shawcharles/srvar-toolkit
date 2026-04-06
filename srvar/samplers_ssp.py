@@ -24,6 +24,22 @@ def _strip_intercept_niw_blocks(
     raise ValueError("prior.niw has incompatible shapes for SSP")
 
 
+def _strip_intercept_eqwise_precision(
+    *,
+    inv_v0_vec: np.ndarray,
+    n: int,
+    k_no_intercept: int,
+) -> np.ndarray:
+    inv = np.asarray(inv_v0_vec, dtype=float).reshape(-1)
+    n_eq = int(n)
+    k = int(k_no_intercept)
+    if inv.shape == (n_eq * k,):
+        return inv
+    if inv.shape == (n_eq * (k + 1),):
+        return inv.reshape(n_eq, k + 1)[:, 1:].reshape(-1)
+    raise ValueError("equation-wise prior precision has incompatible shape for SSP")
+
+
 def _asum_from_beta(*, beta: np.ndarray, n: int, p: int) -> np.ndarray:
     b = np.asarray(beta, dtype=float)
     if b.shape != (int(n) * int(p), int(n)):

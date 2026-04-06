@@ -4,8 +4,20 @@ from typing import Any
 
 import numpy as np
 
-from . import elb as elb_mod
 from . import metrics
+from .evaluation_common import (
+    extract_series_draws,
+    interval_hit_value,
+    interval_hit_vector,
+    mean_of_finite,
+    prepare_evaluation_pair,
+    score_value_from_draws,
+    score_vector_from_draws,
+    select_forecast_draws,
+)
+from .evaluation_common import (
+    prepare_evaluation_inputs as prepare_evaluation_inputs_common,
+)
 from .results import ForecastResult
 
 
@@ -71,17 +83,9 @@ class MetricsAccumulator:
         self._sum_coverage: dict[float, np.ndarray] = {
             c: np.zeros((self._max_h, n), dtype=float) for c in self._coverage_intervals
         }
-
-        elb_cfg = dict(evaluation.get("elb_censor", {}))
-        self._elb_enabled = bool(elb_cfg.get("enabled", False))
-        self._elb_bound = float(elb_cfg["bound"]) if self._elb_enabled else float("nan")
-        self._elb_indices = (
-            [int(self._variables.index(v)) for v in list(elb_cfg.get("variables", []))]
-            if self._elb_enabled
-            else []
-        )
-        self._elb_censor_realized = bool(elb_cfg.get("censor_realized", True))
-        self._elb_censor_forecasts = bool(elb_cfg.get("censor_forecasts", False))
+        self._count_coverage: dict[float, np.ndarray] = {
+            c: np.zeros((self._max_h, n), dtype=int) for c in self._coverage_intervals
+        }
 
     @property
     def origins(self) -> int:
@@ -99,23 +103,21 @@ class MetricsAccumulator:
         if len(forecast.variables) != len(self._variables):
             raise ValueError("forecast.variables must match variables")
 
-        draws = np.asarray(forecast.draws, dtype=float)
-        mean = np.asarray(forecast.mean, dtype=float)
+        yt, forecast_eval = prepare_evaluation_pair(
+            forecast=forecast,
+            y_true=yt,
+            variables=self._variables,
+            evaluation=self._evaluation,
+        )
+
+        draws = np.asarray(forecast_eval.draws, dtype=float)
+        mean = np.asarray(forecast_eval.mean, dtype=float)
         if draws.ndim != 3 or mean.ndim != 2:
             raise ValueError("forecast draws/mean must have shapes (D, H, N)/(H, N)")
         if draws.shape[1] < self._max_h or mean.shape[0] < self._max_h:
             raise ValueError("forecast does not contain required horizons")
         if draws.shape[2] != len(self._variables) or mean.shape[1] != len(self._variables):
             raise ValueError("forecast variable dimension must match len(variables)")
-
-        if self._elb_enabled:
-            if self._elb_censor_realized:
-                yt = elb_mod.apply_elb_floor(yt, bound=self._elb_bound, indices=self._elb_indices)
-            if self._elb_censor_forecasts:
-                draws = elb_mod.apply_elb_floor(
-                    draws, bound=self._elb_bound, indices=self._elb_indices
-                )
-                mean = draws.mean(axis=0)
 
         errors = mean[: self._max_h, :] - yt
         mask = ~np.isnan(errors)
@@ -125,101 +127,82 @@ class MetricsAccumulator:
         self._count_err += mask.astype(int)
 
         if self._crps_enabled:
-            use_latent = bool(self._evaluation["crps"]["use_latent"])
-            sims_all = (
-                np.asarray(forecast.latent_draws, dtype=float)
-                if (use_latent and forecast.latent_draws is not None)
-                else draws
+            sims_all = select_forecast_draws(
+                forecast_eval, use_latent=bool(self._evaluation["crps"]["use_latent"])
             )
             for h in range(self._max_h):
                 for j in range(len(self._variables)):
-                    y = float(yt[h, j])
-                    if np.isnan(y):
-                        continue
-                    val = float(metrics.crps_draws(y, sims_all[:, h, j]))
-                    if np.isnan(val):
+                    val = score_value_from_draws(
+                        float(yt[h, j]), sims_all[:, h, j], metrics.crps_draws
+                    )
+                    if not np.isfinite(val):
                         continue
                     self._sum_crps[h, j] += val
                     self._count_crps[h, j] += 1
 
         if self._wis_enabled:
-            use_latent = bool(self._evaluation["wis"]["use_latent"])
-            sims_all = (
-                np.asarray(forecast.latent_draws, dtype=float)
-                if (use_latent and forecast.latent_draws is not None)
-                else draws
+            sims_all = select_forecast_draws(
+                forecast_eval, use_latent=bool(self._evaluation["wis"]["use_latent"])
             )
             for h in range(self._max_h):
                 for j in range(len(self._variables)):
-                    y = float(yt[h, j])
-                    if np.isnan(y):
-                        continue
-                    val = float(
-                        metrics.wis_draws(y, sims_all[:, h, j], intervals=self._wis_intervals)
+                    val = score_value_from_draws(
+                        float(yt[h, j]),
+                        sims_all[:, h, j],
+                        metrics.wis_draws,
+                        intervals=self._wis_intervals,
                     )
-                    if np.isnan(val):
+                    if not np.isfinite(val):
                         continue
                     self._sum_wis[h, j] += val
                     self._count_wis[h, j] += 1
 
         if self._pinball_enabled:
-            use_latent = bool(self._evaluation["pinball"]["use_latent"])
-            sims_all = (
-                np.asarray(forecast.latent_draws, dtype=float)
-                if (use_latent and forecast.latent_draws is not None)
-                else draws
+            sims_all = select_forecast_draws(
+                forecast_eval, use_latent=bool(self._evaluation["pinball"]["use_latent"])
             )
             for h in range(self._max_h):
                 for j in range(len(self._variables)):
-                    y = float(yt[h, j])
-                    if np.isnan(y):
-                        continue
-                    val = float(
-                        metrics.pinball_draws(
-                            y, sims_all[:, h, j], quantiles=self._pinball_quantiles
-                        )
+                    val = score_value_from_draws(
+                        float(yt[h, j]),
+                        sims_all[:, h, j],
+                        metrics.pinball_draws,
+                        quantiles=self._pinball_quantiles,
                     )
-                    if np.isnan(val):
+                    if not np.isfinite(val):
                         continue
                     self._sum_pinball[h, j] += val
                     self._count_pinball[h, j] += 1
 
         if self._log_score_enabled:
-            use_latent = bool(self._evaluation["log_score"]["use_latent"])
-            sims_all = (
-                np.asarray(forecast.latent_draws, dtype=float)
-                if (use_latent and forecast.latent_draws is not None)
-                else draws
+            sims_all = select_forecast_draws(
+                forecast_eval, use_latent=bool(self._evaluation["log_score"]["use_latent"])
             )
             for h in range(self._max_h):
                 for j in range(len(self._variables)):
-                    y = float(yt[h, j])
-                    if np.isnan(y):
-                        continue
-                    val = float(
-                        metrics.log_score_draws(
-                            y, sims_all[:, h, j], variance_floor=self._log_score_var_floor
-                        )
+                    val = score_value_from_draws(
+                        float(yt[h, j]),
+                        sims_all[:, h, j],
+                        metrics.log_score_draws,
+                        variance_floor=self._log_score_var_floor,
                     )
-                    if np.isnan(val):
+                    if not np.isfinite(val):
                         continue
                     self._sum_log_score[h, j] += val
                     self._count_log_score[h, j] += 1
 
         if self._coverage_enabled and self._coverage_intervals:
-            use_latent = bool(self._evaluation["coverage"]["use_latent"])
-            sims_all = (
-                np.asarray(forecast.latent_draws, dtype=float)
-                if (use_latent and forecast.latent_draws is not None)
-                else draws
+            sims_all = select_forecast_draws(
+                forecast_eval, use_latent=bool(self._evaluation["coverage"]["use_latent"])
             )
             for c in self._coverage_intervals:
-                qlo = 0.5 - 0.5 * float(c)
-                qhi = 0.5 + 0.5 * float(c)
-                lo = np.quantile(sims_all[:, : self._max_h, :], q=qlo, axis=0)
-                hi = np.quantile(sims_all[:, : self._max_h, :], q=qhi, axis=0)
-                hit = ((yt >= lo) & (yt <= hi)).astype(float)
-                self._sum_coverage[c] += hit
+                for h in range(self._max_h):
+                    for j in range(len(self._variables)):
+                        hit = interval_hit_value(float(yt[h, j]), sims_all[:, h, j], interval=c)
+                        if not np.isfinite(hit):
+                            continue
+                        self._sum_coverage[c][h, j] += hit
+                        self._count_coverage[c][h, j] += 1
 
         self._origins += 1
 
@@ -266,10 +249,12 @@ class MetricsAccumulator:
                 row["mae"] = mae
 
                 if self._coverage_enabled and self._coverage_intervals:
-                    denom = float(self._origins) if self._origins > 0 else float("nan")
                     for c in self._coverage_intervals:
-                        row[f"coverage_{int(round(100 * float(c)))}"] = float(
-                            self._sum_coverage[c][h - 1, j] / denom
+                        n_cov = int(self._count_coverage[c][h - 1, j])
+                        row[f"coverage_{int(round(100 * float(c)))}"] = (
+                            float("nan")
+                            if n_cov < 1
+                            else float(self._sum_coverage[c][h - 1, j] / n_cov)
                         )
 
                 rows.append(row)
@@ -288,37 +273,12 @@ def prepare_evaluation_inputs(
 
     Returns the transformed realized array and (optionally) transformed forecasts.
     """
-    yt = np.asarray(y_true, dtype=float)
-    fc_eval = forecasts
-
-    elb_cfg = dict(evaluation.get("elb_censor", {}))
-    if bool(elb_cfg.get("enabled", False)):
-        bound = float(elb_cfg["bound"])
-        idx = [int(variables.index(v)) for v in list(elb_cfg.get("variables", []))]
-
-        if bool(elb_cfg.get("censor_realized", True)):
-            yt = elb_mod.apply_elb_floor(yt, bound=bound, indices=idx)
-
-        if bool(elb_cfg.get("censor_forecasts", False)):
-            fc_eval = []
-            for fc in forecasts:
-                draws_c = elb_mod.apply_elb_floor(fc.draws, bound=bound, indices=idx)
-                mean_c = draws_c.mean(axis=0)
-                quantiles_c = {
-                    q: np.quantile(draws_c, q=float(q), axis=0) for q in fc.quantiles.keys()
-                }
-                fc_eval.append(
-                    ForecastResult(
-                        variables=list(fc.variables),
-                        horizons=list(fc.horizons),
-                        draws=draws_c,
-                        mean=mean_c,
-                        quantiles=quantiles_c,
-                        latent_draws=fc.latent_draws,
-                    )
-                )
-
-    return yt, fc_eval
+    return prepare_evaluation_inputs_common(
+        y_true=y_true,
+        forecasts=forecasts,
+        variables=variables,
+        evaluation=evaluation,
+    )
 
 
 def compute_metrics_rows(
@@ -345,7 +305,13 @@ def compute_metrics_rows(
     if int(yt.shape[2]) != len(variables):
         raise ValueError("len(variables) must equal y_true.shape[2]")
 
-    k_orig = int(yt.shape[0])
+    yt, forecasts_eval = prepare_evaluation_inputs_common(
+        y_true=yt,
+        forecasts=forecasts,
+        variables=variables,
+        evaluation=evaluation,
+    )
+
     max_h = int(yt.shape[1])
 
     coverage_enabled = bool(evaluation["coverage"]["enabled"])
@@ -364,8 +330,10 @@ def compute_metrics_rows(
     for j, vname in enumerate(variables):
         for h in range(1, max_h + 1):
             y = yt[:, h - 1, j]
-            mu = np.asarray([fc.mean[h - 1, j] for fc in forecasts], dtype=float)
+            mu = np.asarray([fc.mean[h - 1, j] for fc in forecasts_eval], dtype=float)
             errors = mu - y
+            err_mask = np.isfinite(errors)
+            n_err = int(err_mask.sum())
 
             row: dict[str, Any] = {"variable": vname, "horizon": h, "crps": float("nan")}
             if wis_enabled:
@@ -374,128 +342,83 @@ def compute_metrics_rows(
                 row["pinball"] = float("nan")
             if log_score_enabled:
                 row["log_score"] = float("nan")
-            row["rmse"] = float(metrics.rmse(errors, axis=0))
-            row["mae"] = float(metrics.mae(errors, axis=0))
+            row["rmse"] = (
+                float("nan")
+                if n_err < 1
+                else float(np.sqrt(np.sum((errors[err_mask]) ** 2) / float(n_err)))
+            )
+            row["mae"] = (
+                float("nan") if n_err < 1 else float(np.sum(np.abs(errors[err_mask])) / float(n_err))
+            )
 
             if crps_enabled:
-                sims_list = [
-                    (
-                        fc.latent_draws
-                        if (bool(evaluation["crps"]["use_latent"]) and fc.latent_draws is not None)
-                        else fc.draws
-                    )[:, h - 1, j]
-                    for fc in forecasts
-                ]
-                crps_vals = np.asarray(
-                    [
-                        (
-                            float("nan")
-                            if np.isnan(y[i2])
-                            else float(metrics.crps_draws(y[i2], sims))
-                        )
-                        for i2, sims in enumerate(sims_list)
-                    ],
-                    dtype=float,
+                crps_vals = score_vector_from_draws(
+                    y,
+                    extract_series_draws(
+                        forecasts_eval,
+                        horizon_index=h - 1,
+                        var_index=j,
+                        use_latent=bool(evaluation["crps"]["use_latent"]),
+                    ),
+                    metrics.crps_draws,
                 )
-                row["crps"] = float(np.nanmean(crps_vals))
+                row["crps"] = mean_of_finite(crps_vals)
 
             if wis_enabled:
-                sims_list = [
-                    (
-                        fc.latent_draws
-                        if (bool(evaluation["wis"]["use_latent"]) and fc.latent_draws is not None)
-                        else fc.draws
-                    )[:, h - 1, j]
-                    for fc in forecasts
-                ]
-                wis_vals = np.asarray(
-                    [
-                        (
-                            float("nan")
-                            if np.isnan(y[i2])
-                            else float(metrics.wis_draws(y[i2], sims, intervals=wis_intervals))
-                        )
-                        for i2, sims in enumerate(sims_list)
-                    ],
-                    dtype=float,
+                wis_vals = score_vector_from_draws(
+                    y,
+                    extract_series_draws(
+                        forecasts_eval,
+                        horizon_index=h - 1,
+                        var_index=j,
+                        use_latent=bool(evaluation["wis"]["use_latent"]),
+                    ),
+                    metrics.wis_draws,
+                    intervals=wis_intervals,
                 )
-                row["wis"] = float(np.nanmean(wis_vals))
+                row["wis"] = mean_of_finite(wis_vals)
 
             if pinball_enabled:
-                sims_list = [
-                    (
-                        fc.latent_draws
-                        if (
-                            bool(evaluation["pinball"]["use_latent"])
-                            and fc.latent_draws is not None
-                        )
-                        else fc.draws
-                    )[:, h - 1, j]
-                    for fc in forecasts
-                ]
-                pin_vals = np.asarray(
-                    [
-                        (
-                            float("nan")
-                            if np.isnan(y[i2])
-                            else float(
-                                metrics.pinball_draws(y[i2], sims, quantiles=pinball_quantiles)
-                            )
-                        )
-                        for i2, sims in enumerate(sims_list)
-                    ],
-                    dtype=float,
+                pin_vals = score_vector_from_draws(
+                    y,
+                    extract_series_draws(
+                        forecasts_eval,
+                        horizon_index=h - 1,
+                        var_index=j,
+                        use_latent=bool(evaluation["pinball"]["use_latent"]),
+                    ),
+                    metrics.pinball_draws,
+                    quantiles=pinball_quantiles,
                 )
-                row["pinball"] = float(np.nanmean(pin_vals))
+                row["pinball"] = mean_of_finite(pin_vals)
 
             if log_score_enabled:
-                sims_list = [
-                    (
-                        fc.latent_draws
-                        if (
-                            bool(evaluation["log_score"]["use_latent"])
-                            and fc.latent_draws is not None
-                        )
-                        else fc.draws
-                    )[:, h - 1, j]
-                    for fc in forecasts
-                ]
-                ls_vals = np.asarray(
-                    [
-                        (
-                            float("nan")
-                            if np.isnan(y[i2])
-                            else float(
-                                metrics.log_score_draws(
-                                    y[i2], sims, variance_floor=log_score_var_floor
-                                )
-                            )
-                        )
-                        for i2, sims in enumerate(sims_list)
-                    ],
-                    dtype=float,
+                ls_vals = score_vector_from_draws(
+                    y,
+                    extract_series_draws(
+                        forecasts_eval,
+                        horizon_index=h - 1,
+                        var_index=j,
+                        use_latent=bool(evaluation["log_score"]["use_latent"]),
+                    ),
+                    metrics.log_score_draws,
+                    variance_floor=log_score_var_floor,
                 )
-                row["log_score"] = float(np.nanmean(ls_vals))
+                row["log_score"] = mean_of_finite(ls_vals)
 
             if coverage_enabled:
                 for c in intervals:
-                    qlo = 0.5 - 0.5 * float(c)
-                    qhi = 0.5 + 0.5 * float(c)
-                    hit = np.empty(k_orig, dtype=float)
-                    for i2, fc in enumerate(forecasts):
-                        sims = (
-                            fc.latent_draws
-                            if (
-                                bool(evaluation["coverage"]["use_latent"])
-                                and fc.latent_draws is not None
-                            )
-                            else fc.draws
-                        )
-                        lo = float(np.quantile(sims[:, h - 1, j], q=qlo))
-                        hi = float(np.quantile(sims[:, h - 1, j], q=qhi))
-                        yi = float(yt[i2, h - 1, j])
-                        hit[i2] = float(lo <= yi <= hi)
-                    row[f"coverage_{int(round(100 * float(c)))}"] = float(np.nanmean(hit))
+                    hit = interval_hit_vector(
+                        y,
+                        extract_series_draws(
+                            forecasts_eval,
+                            horizon_index=h - 1,
+                            var_index=j,
+                            use_latent=bool(evaluation["coverage"]["use_latent"]),
+                        ),
+                        interval=float(c),
+                    )
+                    row[f"coverage_{int(round(100 * float(c)))}"] = mean_of_finite(hit)
 
             rows.append(row)
 

@@ -2,10 +2,15 @@
 
 **Shadow-rate VAR toolkit for Bayesian macroeconomic forecasting in pure Python.**
 
-A lightweight, tested implementation of Shadow-Rate Vector Autoregression models with stochastic volatility, Minnesota shrinkage priors, and variable selection, plus a config-driven CLI workflow with backtesting. The library also includes FRED data fetching for building reproducible macro datasets.
+A lightweight, tested implementation of Shadow-Rate Vector Autoregression models with ELB data augmentation, multiple Minnesota-style shrinkage paths, stochastic volatility, structural analysis, and a config-driven CLI workflow with backtesting. The library also includes FRED data fetching for building reproducible macro datasets.
 
 ```bash
 pip install git+https://github.com/shawcharles/srvar-toolkit.git
+```
+
+```{note}
+Version `0.3.0` adds explicit legacy/canonical/tempered Minnesota prior modes, missing-data-safe
+evaluation/plotting, and a larger benchmark/diagnostic toolkit for comparing Minnesota variants.
 ```
 
 ---
@@ -62,15 +67,18 @@ Complete function and class documentation with type signatures and examples.
 | Component | Description | Status |
 |-----------|-------------|--------|
 | Conjugate BVAR (NIW) | Closed-form posterior updates | ✅ Supported |
-| Minnesota Shrinkage | Prior construction with lag decay | ✅ Supported |
+| Legacy Minnesota-style NIW shrinkage | Historical prior construction with lag decay (non-canonical) | ✅ Supported |
+| Canonical Minnesota shrinkage | Equation-wise own-vs-cross shrinkage for homoskedastic and diagonal SV models | ✅ Supported |
+| Tempered Minnesota bridge | Experimental legacy-to-canonical bridge for diagonal SV | ⚠️ Experimental |
 | Shadow-Rate / ELB | Latent shadow-rate sampling | ✅ Supported |
-| Stochastic Volatility | Diagonal log-variance random-walk | ✅ Supported |
+| Stochastic Volatility | Diagonal SV (RW/AR1), triangular covariance SV, and factor SV | ✅ Supported |
 | Variable Selection (SSVS) | Spike-and-slab priors | ✅ Supported |
 | Bayesian LASSO (BLASSO) | Shrinkage prior for VAR coefficients | ✅ Supported |
 | Steady-State VAR (SSP) | Parameterize intercept via steady-state mean `mu` | ✅ Supported |
 | Forecasting | Posterior predictive simulation | ✅ Supported |
+| Backtesting + Evaluation | Rolling/expanding backtests with metrics, plots, and streaming evaluation | ✅ Supported |
 | Conditional forecasts | Scenario forecasts with hard constraints | ✅ Supported |
-| Structural IRFs (Cholesky) | Cholesky-identified impulse responses from posterior draws | ✅ Supported |
+| Structural IRFs / FEVD / HD | Cholesky and sign-restricted structural analysis from posterior draws | ✅ Supported |
 
 ---
 

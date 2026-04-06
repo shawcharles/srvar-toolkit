@@ -63,8 +63,10 @@
 
    # For NIW, method can be:
    # - "default"
-   # - "minnesota" (recommended)
-   method: "minnesota"
+   # - "minnesota" or "minnesota_legacy" (recommended)
+   # - "minnesota_canonical" (homo + diagonal SV only)
+   # - "minnesota_tempered" (experimental; diagonal SV only)
+   method: "minnesota_legacy"
 
    # Minnesota hyperparameters (optional; shown here explicitly).
    minnesota:
@@ -72,6 +74,7 @@
      lambda2: 0.5
      lambda3: 1.0
      lambda4: 100.0
+     # tempered_alpha: 0.25  # only used with method: "minnesota_tempered"
 
  sampler:
    # MCMC settings used for each model re-fit at each backtest origin.
@@ -157,7 +160,7 @@
    # If true, write metrics.csv (CRPS/RMSE/MAE + coverage columns).
    metrics_table: true
 
-output:
+ output:
    # Output directory for all artifacts.
    out_dir: "outputs/demo_backtest"
 

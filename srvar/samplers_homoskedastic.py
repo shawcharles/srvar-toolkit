@@ -10,6 +10,7 @@ from .samplers_blasso import _blasso_update_adaptive, _blasso_update_global, _bl
 from .samplers_dl import _dl_sample_beta_sigma, _dl_update
 from .samplers_ssp import (
     _asum_from_beta,
+    _strip_intercept_eqwise_precision,
     _strip_intercept_niw_blocks,
     sample_mu_gamma,
     sample_steady_state_mu,
@@ -56,6 +57,9 @@ def _fit_no_elb(
         dl_vartheta: np.ndarray | None = None
         dl_zeta: float | None = None
         dl_inv_v0: np.ndarray | None = None
+        canonical = (
+            prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
+        )
 
         beta_keep: list[np.ndarray] = []
         sigma_keep: list[np.ndarray] = []
@@ -215,6 +219,24 @@ def _fit_no_elb(
                     abeta=float(spec_d.abeta),
                     rng=rng,
                 )
+            elif prior_family == "minnesota_canonical":
+                if canonical is None:
+                    raise ValueError(
+                        "prior_family='minnesota_canonical' requires prior.minnesota_canonical"
+                    )
+                beta_lags, sigma = _dl_sample_beta_sigma(
+                    x=x,
+                    y=y,
+                    m0=m0_ssp,
+                    inv_v0_vec=_strip_intercept_eqwise_precision(
+                        inv_v0_vec=canonical.inv_v0_vec,
+                        n=y.shape[1],
+                        k_no_intercept=k,
+                    ),
+                    s0=niw.s0,
+                    nu0=niw.nu0,
+                    rng=rng,
+                )
             else:
                 raise ValueError(f"Unknown prior family: {prior_family}")
 
@@ -262,7 +284,7 @@ def _fit_no_elb(
                         g = np.concatenate([np.array([True], dtype=bool), gamma])
                     gamma_keep.append(g.copy())
 
-        if last_posterior is None:
+        if last_posterior is None and prior_family != "minnesota_canonical":
             raise RuntimeError("sampler.draws produced no posterior")
 
         return FitResult(
@@ -353,6 +375,57 @@ def _fit_no_elb(
             posterior=posterior,
             beta_draws=beta_kept,
             sigma_draws=sigma_kept,
+        )
+
+    if prior_family == "minnesota_canonical":
+        canonical = prior.minnesota_canonical
+        if canonical is None:
+            raise ValueError(
+                "prior_family='minnesota_canonical' requires prior.minnesota_canonical"
+            )
+
+        beta_keep: list[np.ndarray] = []
+        sigma_keep: list[np.ndarray] = []
+
+        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+
+        for it in range(sampler.draws):
+            if robust:
+                assert lam is not None
+                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                x_w = x * sqrt_lam
+                y_w = y * sqrt_lam
+            else:
+                x_w = x
+                y_w = y
+
+            beta, sigma = _dl_sample_beta_sigma(
+                x=x_w,
+                y=y_w,
+                m0=niw.m0,
+                inv_v0_vec=canonical.inv_v0_vec,
+                s0=niw.s0,
+                nu0=niw.nu0,
+                rng=rng,
+            )
+
+            if robust:
+                assert model.shocks is not None
+                resid = y - x @ beta
+                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+
+            if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
+                beta_keep.append(beta.copy())
+                sigma_keep.append(sigma.copy())
+
+        return FitResult(
+            dataset=dataset,
+            model=model,
+            prior=prior,
+            sampler=sampler,
+            posterior=None,
+            beta_draws=np.stack(beta_keep) if beta_keep else None,
+            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
         )
 
     if prior_family == "blasso":
@@ -674,6 +747,9 @@ def _fit_elb_gibbs(
         dl_vartheta: np.ndarray | None = None
         dl_zeta: float | None = None
         dl_inv_v0: np.ndarray | None = None
+        canonical = (
+            prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
+        )
 
         last_posterior: PosteriorNIW | None = None
 
@@ -824,6 +900,24 @@ def _fit_elb_gibbs(
                     abeta=float(spec_d.abeta),
                     rng=rng,
                 )
+            elif prior_family == "minnesota_canonical":
+                if canonical is None:
+                    raise ValueError(
+                        "prior_family='minnesota_canonical' requires prior.minnesota_canonical"
+                    )
+                beta_lags, sigma = _dl_sample_beta_sigma(
+                    x=x,
+                    y=y,
+                    m0=m0_ssp,
+                    inv_v0_vec=_strip_intercept_eqwise_precision(
+                        inv_v0_vec=canonical.inv_v0_vec,
+                        n=y.shape[1],
+                        k_no_intercept=k,
+                    ),
+                    s0=niw.s0,
+                    nu0=niw.nu0,
+                    rng=rng,
+                )
             else:
                 raise ValueError(f"Unknown prior family: {prior_family}")
 
@@ -886,7 +980,7 @@ def _fit_elb_gibbs(
                         g = np.concatenate([np.array([True], dtype=bool), gamma])
                     gamma_keep.append(g.copy())
 
-        if last_posterior is None:
+        if last_posterior is None and prior_family != "minnesota_canonical":
             raise RuntimeError("sampler.draws produced no posterior")
 
         latent_dataset = Dataset.from_arrays(
@@ -922,6 +1016,7 @@ def _fit_elb_gibbs(
     ssvs_spec = prior.ssvs if prior_family == "ssvs" else None
     blasso = prior.blasso if prior_family == "blasso" else None
     dl = prior.dl if prior_family == "dl" else None
+    canonical = prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
 
     tau = None
     lambda_ = None
@@ -1041,6 +1136,21 @@ def _fit_elb_gibbs(
                 rng=rng,
             )
 
+        elif prior_family == "minnesota_canonical":
+            if canonical is None:
+                raise ValueError(
+                    "prior_family='minnesota_canonical' requires prior.minnesota_canonical"
+                )
+            beta, sigma = _dl_sample_beta_sigma(
+                x=x,
+                y=y,
+                m0=niw.m0,
+                inv_v0_vec=canonical.inv_v0_vec,
+                s0=niw.s0,
+                nu0=niw.nu0,
+                rng=rng,
+            )
+
         else:
             if blasso is None:
                 raise ValueError("prior.family='blasso' requires prior.blasso")
@@ -1119,7 +1229,7 @@ def _fit_elb_gibbs(
             if gamma is not None:
                 gamma_keep.append(gamma.copy())
 
-    if last_posterior is None:
+    if last_posterior is None and prior_family != "minnesota_canonical":
         raise RuntimeError("sampler.draws produced no posterior")
 
     latent_dataset = Dataset.from_arrays(

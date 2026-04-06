@@ -21,13 +21,13 @@ pytest
 Check lint:
 
 ```bash
-ruff check srvar tests
+ruff check srvar tests scripts
 ```
 
 Auto-fix import sorting + simple issues:
 
 ```bash
-ruff check --fix srvar tests
+ruff check --fix srvar tests scripts
 ```
 
 Format code:
@@ -35,6 +35,9 @@ Format code:
 ```bash
 black srvar tests
 ```
+
+The docs pick up the package release from `srvar.__version__`, so version bumps should update
+both package metadata and the documentation surfaces that mention the current release.
 
 ## Type checking (optional)
 
@@ -47,4 +50,3 @@ mypy srvar
 ```bash
 sphinx-build -b html docs docs/_build/html
 ```
-

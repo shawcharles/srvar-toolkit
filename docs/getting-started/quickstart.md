@@ -24,6 +24,11 @@ fc = forecast(fit_res, horizons=[1, 4], draws=200, rng=rng)
 print(fc.mean)
 ```
 
+For shrinkage priors in `0.3.0`, start with `PriorSpec.niw_minnesota_legacy(...)` when you want
+the reproducible historical Minnesota-style path. The explicit canonical and tempered
+equation-wise paths are documented in the configuration guide and have narrower support
+boundaries.
+
 ## CLI + YAML (config-driven run)
 
 The toolkit also supports config-driven runs via the `srvar` CLI.

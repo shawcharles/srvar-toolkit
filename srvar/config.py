@@ -484,7 +484,7 @@ def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> P
         method_l = (method or "minnesota").lower()
         if method_l == "default":
             return PriorSpec.niw_default(k=k, n=dataset.N)
-        if method_l == "minnesota":
+        if method_l in {"minnesota", "minnesota_legacy"}:
             hyp = _get(prior_cfg, "minnesota", default={})
             if not isinstance(hyp, dict):
                 raise ConfigError("prior.minnesota must be a mapping")
@@ -494,14 +494,67 @@ def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> P
                     kwargs[name] = hyp[name]
             if "own_lag_means" in hyp:
                 kwargs["own_lag_means"] = hyp["own_lag_means"]
-            return PriorSpec.niw_minnesota(
+            return PriorSpec.niw_minnesota_legacy(
                 p=model.p,
                 y=dataset.values,
                 n=dataset.N,
                 include_intercept=model.include_intercept,
                 **kwargs,
             )
-        raise ConfigError("prior.method for family='niw' must be one of: default, minnesota")
+        if method_l == "minnesota_canonical":
+            vol = model.volatility
+            if vol is not None and vol.enabled and vol.covariance in {"triangular", "factor"}:
+                raise ConfigError(
+                    "prior.method='minnesota_canonical' currently supports only "
+                    "homoskedastic models and diagonal SV "
+                    "(model.volatility.covariance: 'diagonal')"
+                )
+            hyp = _get(prior_cfg, "minnesota", default={})
+            if not isinstance(hyp, dict):
+                raise ConfigError("prior.minnesota must be a mapping")
+            kwargs = {}
+            for name in ["lambda1", "lambda2", "lambda3", "lambda4", "own_lag_mean", "min_sigma2"]:
+                if name in hyp:
+                    kwargs[name] = hyp[name]
+            if "own_lag_means" in hyp:
+                kwargs["own_lag_means"] = hyp["own_lag_means"]
+            return PriorSpec.niw_minnesota_canonical(
+                p=model.p,
+                y=dataset.values,
+                n=dataset.N,
+                include_intercept=model.include_intercept,
+                **kwargs,
+            )
+        if method_l == "minnesota_tempered":
+            vol = model.volatility
+            if vol is None or not vol.enabled or vol.covariance != "diagonal":
+                raise ConfigError(
+                    "prior.method='minnesota_tempered' currently supports only "
+                    "diagonal stochastic volatility "
+                    "(model.volatility.enabled: true, covariance: 'diagonal')"
+                )
+            hyp = _get(prior_cfg, "minnesota", default={})
+            if not isinstance(hyp, dict):
+                raise ConfigError("prior.minnesota must be a mapping")
+            kwargs = {}
+            for name in ["lambda1", "lambda2", "lambda3", "lambda4", "own_lag_mean", "min_sigma2"]:
+                if name in hyp:
+                    kwargs[name] = hyp[name]
+            if "own_lag_means" in hyp:
+                kwargs["own_lag_means"] = hyp["own_lag_means"]
+            if "tempered_alpha" in hyp:
+                kwargs["alpha"] = hyp["tempered_alpha"]
+            return PriorSpec.niw_minnesota_tempered(
+                p=model.p,
+                y=dataset.values,
+                n=dataset.N,
+                include_intercept=model.include_intercept,
+                **kwargs,
+            )
+        raise ConfigError(
+            "prior.method for family='niw' must be one of: "
+            "default, minnesota, minnesota_legacy, minnesota_canonical, minnesota_tempered"
+        )
 
     if family_l == "ssvs":
         hyp = _get(prior_cfg, "ssvs", default={})

@@ -2,7 +2,7 @@
 
 This page is a cookbook of common model configurations (API + YAML). It is intentionally example-driven; see {doc}`configuration-reference` for the full schema.
 
-## 1) Baseline BVAR (NIW + Minnesota shrinkage)
+## 1) Baseline BVAR (NIW + legacy Minnesota-style shrinkage)
 
 YAML:
 
@@ -13,7 +13,7 @@ model:
 
 prior:
   family: "niw"
-  method: "minnesota"
+  method: "minnesota_legacy"
 
 sampler:
   draws: 2000
@@ -26,9 +26,30 @@ Good starting points:
 - `config/minimal_config.yaml`
 - `config/demo_config.yaml`
 
-## 2) Minnesota + stochastic volatility (linear SV benchmark)
+## 2) Legacy Minnesota-style shrinkage + stochastic volatility (linear SV benchmark)
 
 Use SV when forecast uncertainty changes over time.
+
+If you want equation-specific canonical Minnesota shrinkage instead, switch to:
+
+```yaml
+prior:
+  family: "niw"
+  method: "minnesota_canonical"
+```
+
+Use that canonical path only for homoskedastic models and diagonal SV. Triangular and factor SV
+should stay on `method: "minnesota_legacy"`.
+
+For a bounded experimental bridge on diagonal SV, use:
+
+```yaml
+prior:
+  family: "niw"
+  method: "minnesota_tempered"
+  minnesota:
+    tempered_alpha: 0.25
+```
 
 YAML (AR(1) log-vol + triangular covariance):
 

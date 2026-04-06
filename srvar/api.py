@@ -65,9 +65,18 @@ def fit(
     prior_family = prior.family.lower()
     if prior_family not in {"niw", "ssvs", "blasso", "dl"}:
         raise ValueError("only prior.family in {'niw','ssvs','blasso','dl'} is supported")
+    eqwise_minnesota = prior.minnesota_canonical
+    prior_mode = "minnesota_canonical" if eqwise_minnesota is not None else prior_family
 
     if rng is None:
         rng = np.random.default_rng()
+
+    if eqwise_minnesota is not None and eqwise_minnesota.mode == "tempered":
+        vol = model.volatility
+        if vol is None or not vol.enabled or vol.covariance != "diagonal":
+            raise ValueError(
+                "minnesota_tempered currently supports only diagonal stochastic volatility"
+            )
 
     if model.shocks is not None and model.shocks.family != "gaussian":
         vol = model.volatility
@@ -87,6 +96,14 @@ def fit(
             )
 
     if model.volatility is not None and model.volatility.enabled:
+        if prior_mode == "minnesota_canonical" and model.volatility.covariance in {
+            "triangular",
+            "factor",
+        }:
+            raise ValueError(
+                "minnesota_canonical currently supports only homoskedastic models "
+                "and diagonal stochastic volatility"
+            )
         if prior_family not in {"niw", "blasso", "dl"}:
             raise ValueError(
                 "stochastic volatility currently requires prior.family in {'niw','blasso','dl'}"
@@ -107,7 +124,7 @@ def fit(
             model=model,
             prior=prior,
             sampler=sampler,
-            prior_family=prior_family,
+            prior_family=prior_mode,
             rng=rng,
         )
 
@@ -119,7 +136,7 @@ def fit(
         model=model,
         prior=prior,
         sampler=sampler,
-        prior_family=prior_family,
+        prior_family=prior_mode,
         rng=rng,
     )
 

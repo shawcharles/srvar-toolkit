@@ -257,6 +257,198 @@ class DLSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class MinnesotaCanonicalSpec:
+    """Equation-wise canonical Minnesota prior metadata.
+
+    Parameters
+    ----------
+    sigma2:
+        Scale variances used in the Minnesota construction (length ``N``).
+    inv_v0_vec:
+        Equation-wise prior precision vector over ``vec(beta)`` in Fortran / column-major order.
+        The block of ``K`` coefficients for equation ``j`` occupies
+        ``inv_v0_vec[j*K:(j+1)*K]``.
+    mode:
+        Equation-wise Minnesota variant label. ``"canonical"`` is the exact canonical
+        construction; ``"tempered"`` is the experimental geometric bridge between the
+        legacy and canonical variance maps.
+    tempered_alpha:
+        Blend weight for ``mode="tempered"``. ``0.0`` reproduces the legacy coefficient
+        variances and ``1.0`` reproduces the canonical coefficient variances.
+    """
+
+    sigma2: np.ndarray
+    inv_v0_vec: np.ndarray
+    mode: Literal["canonical", "tempered"] = "canonical"
+    tempered_alpha: float | None = None
+
+    def __post_init__(self) -> None:
+        sigma2 = np.asarray(self.sigma2, dtype=float).reshape(-1)
+        inv_v0_vec = np.asarray(self.inv_v0_vec, dtype=float).reshape(-1)
+        if sigma2.shape[0] < 1:
+            raise ValueError("sigma2 must be a non-empty 1D array")
+        if np.any(~np.isfinite(sigma2)) or np.any(sigma2 <= 0):
+            raise ValueError("sigma2 must be finite and > 0")
+        if inv_v0_vec.shape[0] < 1:
+            raise ValueError("inv_v0_vec must be a non-empty 1D array")
+        if np.any(~np.isfinite(inv_v0_vec)) or np.any(inv_v0_vec <= 0):
+            raise ValueError("inv_v0_vec must be finite and > 0")
+        mode = str(self.mode).lower()
+        if mode not in {"canonical", "tempered"}:
+            raise ValueError("mode must be one of: canonical, tempered")
+        if mode == "canonical":
+            if self.tempered_alpha is not None:
+                raise ValueError("tempered_alpha must be omitted when mode='canonical'")
+            return
+        if self.tempered_alpha is None:
+            raise ValueError("tempered_alpha is required when mode='tempered'")
+        alpha = float(self.tempered_alpha)
+        if not np.isfinite(alpha) or not (0.0 <= alpha <= 1.0):
+            raise ValueError("tempered_alpha must be finite and in [0, 1]")
+
+
+def _validate_minnesota_hyperparameters(
+    *,
+    p: int,
+    y: np.ndarray,
+    n: int | None,
+    lambda1: float,
+    lambda2: float,
+    lambda3: float,
+    lambda4: float,
+    own_lag_means: np.ndarray | list[float] | None,
+    own_lag_mean: float,
+) -> tuple[np.ndarray, int]:
+    v = np.asarray(y, dtype=float)
+    if v.ndim != 2:
+        raise ValueError("y must be a 2D array of shape (T, N)")
+    t, n_y = v.shape
+
+    if n is None:
+        n = int(n_y)
+    if int(n) != int(n_y):
+        raise ValueError("n must match y.shape[1]")
+    if p < 1:
+        raise ValueError("p must be >= 1")
+    if t <= p:
+        raise ValueError("T must be > p")
+
+    if lambda1 <= 0:
+        raise ValueError("lambda1 must be > 0")
+    if lambda2 <= 0:
+        raise ValueError("lambda2 must be > 0")
+    if lambda3 < 0:
+        raise ValueError("lambda3 must be >= 0")
+    if lambda4 <= 0:
+        raise ValueError("lambda4 must be > 0")
+
+    if own_lag_means is not None and own_lag_mean != 0.0:
+        raise ValueError("specify at most one of own_lag_means and own_lag_mean")
+
+    return v, int(n)
+
+
+def _estimate_minnesota_sigma2(
+    *,
+    y: np.ndarray,
+    p: int,
+    include_intercept: bool,
+    min_sigma2: float,
+) -> np.ndarray:
+    v = np.asarray(y, dtype=float)
+    n = int(v.shape[1])
+    sigma2 = np.empty(n, dtype=float)
+    for i in range(n):
+        xi, yi = design_matrix(v[:, [i]], p, include_intercept=include_intercept)
+        b, *_ = np.linalg.lstsq(xi, yi, rcond=None)
+        resid = yi - xi @ b
+        denom = max(int(resid.shape[0] - xi.shape[1]), 1)
+        s2 = float((resid.T @ resid)[0, 0] / denom)
+        sigma2[i] = max(s2, float(min_sigma2))
+    return sigma2
+
+
+def _build_minnesota_prior_mean(
+    *,
+    n: int,
+    p: int,
+    include_intercept: bool,
+    own_lag_means: np.ndarray | list[float] | None,
+    own_lag_mean: float,
+) -> np.ndarray:
+    k = (1 if include_intercept else 0) + n * p
+    m0 = np.zeros((k, n), dtype=float)
+
+    base = 1 if include_intercept else 0
+    if own_lag_means is not None:
+        olm = np.asarray(own_lag_means, dtype=float).reshape(-1)
+        if olm.shape != (n,):
+            raise ValueError("own_lag_means must have shape (N,)")
+        for j in range(n):
+            m0[base + j, j] = float(olm[j])
+    elif own_lag_mean != 0.0:
+        for j in range(n):
+            m0[base + j, j] = float(own_lag_mean)
+
+    return m0
+
+
+def _canonical_minnesota_variances(
+    *,
+    n: int,
+    p: int,
+    include_intercept: bool,
+    sigma2: np.ndarray,
+    lambda1: float,
+    lambda2: float,
+    lambda3: float,
+    lambda4: float,
+) -> np.ndarray:
+    sigma2_arr = np.asarray(sigma2, dtype=float).reshape(-1)
+    if sigma2_arr.shape != (n,):
+        raise ValueError("sigma2 must have shape (N,)")
+
+    k = (1 if include_intercept else 0) + n * p
+    var = np.zeros((k, n), dtype=float)
+    if include_intercept:
+        var[0, :] = float((lambda1 * lambda4) ** 2) * sigma2_arr
+
+    base = 1 if include_intercept else 0
+    for lag in range(1, p + 1):
+        lag_scale = float((lambda1**2) / (lag ** (2.0 * lambda3)))
+        for pred_idx in range(n):
+            row = base + (lag - 1) * n + pred_idx
+            for eq_idx in range(n):
+                if pred_idx == eq_idx:
+                    var[row, eq_idx] = lag_scale
+                else:
+                    var[row, eq_idx] = (
+                        lag_scale * (lambda2**2) * sigma2_arr[eq_idx] / sigma2_arr[pred_idx]
+                    )
+    return var
+
+
+def _tempered_minnesota_variances(
+    *,
+    legacy_var: np.ndarray,
+    canonical_var: np.ndarray,
+    alpha: float,
+) -> np.ndarray:
+    legacy_var_arr = np.asarray(legacy_var, dtype=float)
+    canonical_var_arr = np.asarray(canonical_var, dtype=float)
+    if legacy_var_arr.shape != canonical_var_arr.shape:
+        raise ValueError("legacy_var and canonical_var must have the same shape")
+    if np.any(~np.isfinite(legacy_var_arr)) or np.any(legacy_var_arr <= 0):
+        raise ValueError("legacy_var must be finite and > 0")
+    if np.any(~np.isfinite(canonical_var_arr)) or np.any(canonical_var_arr <= 0):
+        raise ValueError("canonical_var must be finite and > 0")
+    alpha_f = float(alpha)
+    if not np.isfinite(alpha_f) or not (0.0 <= alpha_f <= 1.0):
+        raise ValueError("alpha must be finite and in [0, 1]")
+    return legacy_var_arr * np.power(canonical_var_arr / legacy_var_arr, alpha_f)
+
+
+@dataclass(frozen=True, slots=True)
 class PriorSpec:
     """Prior specification wrapper.
 
@@ -277,6 +469,12 @@ class PriorSpec:
         Optional Bayesian Lasso hyperparameters (required when ``family='blasso'``).
     dl:
         Optional Dirichlet–Laplace hyperparameters (required when ``family='dl'``).
+    minnesota_canonical:
+        Optional equation-wise Minnesota metadata. When present, the prior is fit
+        via the explicit equation-wise Minnesota path rather than the legacy NIW
+        matrix-normal path. ``mode="canonical"`` is the exact canonical
+        construction; ``mode="tempered"`` is the experimental bridge between the
+        legacy and canonical variance maps.
     """
 
     family: str
@@ -284,6 +482,7 @@ class PriorSpec:
     ssvs: SSVSSpec | None = None
     blasso: BLassoSpec | None = None
     dl: DLSpec | None = None
+    minnesota_canonical: MinnesotaCanonicalSpec | None = None
 
     @staticmethod
     def niw_default(*, k: int, n: int) -> PriorSpec:
@@ -320,11 +519,54 @@ class PriorSpec:
         own_lag_mean: float = 0.0,
         min_sigma2: float = 1e-12,
     ) -> PriorSpec:
-        """Construct an NIW prior with Minnesota-style shrinkage.
+        """Backward-compatible alias for the legacy Minnesota-style NIW prior.
 
-        The Minnesota prior shrinks coefficients toward a random-walk/white-noise
-        baseline, with lag-decay and cross-variable shrinkage controlled by
-        ``lambda1..lambda4``.
+        This method preserves the historical ``srvar-toolkit`` behaviour. For an
+        explicit reproducibility path, prefer
+        :meth:`PriorSpec.niw_minnesota_legacy`.
+
+        Notes
+        -----
+        The current implementation is a legacy Minnesota-style NIW construction,
+        not a full canonical Minnesota prior. In particular, it uses one scalar
+        cross-variable shrinkage weight derived from ``lambda2`` rather than
+        equation-specific own-vs-cross shrinkage.
+        """
+        return PriorSpec.niw_minnesota_legacy(
+            p=p,
+            y=y,
+            n=n,
+            include_intercept=include_intercept,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+            min_sigma2=min_sigma2,
+        )
+
+    @staticmethod
+    def niw_minnesota_legacy(
+        *,
+        p: int,
+        y: np.ndarray,
+        n: int | None = None,
+        include_intercept: bool = True,
+        lambda1: float = 0.1,
+        lambda2: float = 0.5,
+        lambda3: float = 1.0,
+        lambda4: float = 100.0,
+        own_lag_means: np.ndarray | list[float] | None = None,
+        own_lag_mean: float = 0.0,
+        min_sigma2: float = 1e-12,
+    ) -> PriorSpec:
+        """Construct the legacy Minnesota-style NIW prior used by this toolkit.
+
+        This preserves the historical ``srvar-toolkit`` prior semantics. It is a
+        Minnesota-style NIW construction with lag decay and a scalar
+        cross-variable shrinkage weight, but it is not a full canonical
+        Minnesota prior.
 
         Parameters
         ----------
@@ -336,7 +578,8 @@ class PriorSpec:
             Whether the resulting prior is compatible with a VAR that includes an
             intercept.
         lambda1, lambda2, lambda3, lambda4:
-            Standard Minnesota hyperparameters.
+            Legacy Minnesota-style hyperparameters. ``lambda2`` is collapsed into
+            a scalar cross-variable weight shared across equations.
         own_lag_means / own_lag_mean:
             Optional prior mean(s) for own first lag.
         min_sigma2:
@@ -347,54 +590,32 @@ class PriorSpec:
         PriorSpec
             A ``PriorSpec`` instance with ``family='niw'``.
         """
-        v = np.asarray(y, dtype=float)
-        if v.ndim != 2:
-            raise ValueError("y must be a 2D array of shape (T, N)")
-        t, n_y = v.shape
-
-        if n is None:
-            n = int(n_y)
-        if int(n) != int(n_y):
-            raise ValueError("n must match y.shape[1]")
-        if p < 1:
-            raise ValueError("p must be >= 1")
-        if t <= p:
-            raise ValueError("T must be > p")
-
-        if lambda1 <= 0:
-            raise ValueError("lambda1 must be > 0")
-        if lambda2 <= 0:
-            raise ValueError("lambda2 must be > 0")
-        if lambda3 < 0:
-            raise ValueError("lambda3 must be >= 0")
-        if lambda4 <= 0:
-            raise ValueError("lambda4 must be > 0")
-
-        if own_lag_means is not None and own_lag_mean != 0.0:
-            raise ValueError("specify at most one of own_lag_means and own_lag_mean")
-
-        sigma2 = np.empty(n, dtype=float)
-        for i in range(n):
-            xi, yi = design_matrix(v[:, [i]], p, include_intercept=include_intercept)
-            b, *_ = np.linalg.lstsq(xi, yi, rcond=None)
-            resid = yi - xi @ b
-            denom = max(int(resid.shape[0] - xi.shape[1]), 1)
-            s2 = float((resid.T @ resid)[0, 0] / denom)
-            sigma2[i] = max(s2, float(min_sigma2))
+        v, n = _validate_minnesota_hyperparameters(
+            p=p,
+            y=y,
+            n=n,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+        )
+        sigma2 = _estimate_minnesota_sigma2(
+            y=v,
+            p=p,
+            include_intercept=include_intercept,
+            min_sigma2=min_sigma2,
+        )
 
         k = (1 if include_intercept else 0) + n * p
-        m0 = np.zeros((k, n), dtype=float)
-
-        base = 1 if include_intercept else 0
-        if own_lag_means is not None:
-            olm = np.asarray(own_lag_means, dtype=float).reshape(-1)
-            if olm.shape != (n,):
-                raise ValueError("own_lag_means must have shape (N,)")
-            for j in range(n):
-                m0[base + j, j] = float(olm[j])
-        elif own_lag_mean != 0.0:
-            for j in range(n):
-                m0[base + j, j] = float(own_lag_mean)
+        m0 = _build_minnesota_prior_mean(
+            n=n,
+            p=p,
+            include_intercept=include_intercept,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+        )
 
         v0 = np.zeros((k, k), dtype=float)
         if include_intercept:
@@ -415,6 +636,184 @@ class PriorSpec:
         s0 = np.diag(sigma2)
         nu0 = float(n + 2)
         return PriorSpec(family="niw", niw=NIWPrior(m0=m0, v0=v0, s0=s0, nu0=nu0))
+
+    @staticmethod
+    def niw_minnesota_canonical(
+        *,
+        p: int,
+        y: np.ndarray,
+        n: int | None = None,
+        include_intercept: bool = True,
+        lambda1: float = 0.1,
+        lambda2: float = 0.5,
+        lambda3: float = 1.0,
+        lambda4: float = 100.0,
+        own_lag_means: np.ndarray | list[float] | None = None,
+        own_lag_mean: float = 0.0,
+        min_sigma2: float = 1e-12,
+    ) -> PriorSpec:
+        """Construct an explicit canonical Minnesota prior on the equation-wise path.
+
+        This constructor preserves the standard own-vs-cross variance distinction by
+        storing per-equation prior precisions rather than collapsing everything into a
+        shared NIW row covariance. The resulting fit path is currently supported for
+        homoskedastic models and diagonal stochastic-volatility models.
+
+        Notes
+        -----
+        The exact equation-wise coefficient prior is carried in
+        ``prior.minnesota_canonical.inv_v0_vec``. The companion ``prior.niw.v0``
+        block is a row-averaged diagonal summary kept for shape compatibility with the
+        rest of the toolkit.
+        """
+        v, n = _validate_minnesota_hyperparameters(
+            p=p,
+            y=y,
+            n=n,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+        )
+        sigma2 = _estimate_minnesota_sigma2(
+            y=v,
+            p=p,
+            include_intercept=include_intercept,
+            min_sigma2=min_sigma2,
+        )
+        var = _canonical_minnesota_variances(
+            n=n,
+            p=p,
+            include_intercept=include_intercept,
+            sigma2=sigma2,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+        )
+        m0 = _build_minnesota_prior_mean(
+            n=n,
+            p=p,
+            include_intercept=include_intercept,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+        )
+
+        # The exact canonical prior is equation-wise. Keep a row-average summary in
+        # NIW.v0 for compatibility with code that expects a (K, K) block.
+        v0_summary = np.diag(np.mean(var, axis=1))
+        niw = NIWPrior(
+            m0=m0,
+            v0=v0_summary,
+            s0=np.diag(sigma2),
+            nu0=2.0,
+        )
+        canonical = MinnesotaCanonicalSpec(
+            sigma2=sigma2,
+            inv_v0_vec=1.0 / var.reshape(-1, order="F"),
+        )
+        return PriorSpec(
+            family="niw",
+            niw=niw,
+            minnesota_canonical=canonical,
+        )
+
+    @staticmethod
+    def niw_minnesota_tempered(
+        *,
+        p: int,
+        y: np.ndarray,
+        n: int | None = None,
+        include_intercept: bool = True,
+        lambda1: float = 0.1,
+        lambda2: float = 0.5,
+        lambda3: float = 1.0,
+        lambda4: float = 100.0,
+        alpha: float = 0.25,
+        own_lag_means: np.ndarray | list[float] | None = None,
+        own_lag_mean: float = 0.0,
+        min_sigma2: float = 1e-12,
+    ) -> PriorSpec:
+        """Construct an experimental tempered bridge between legacy and canonical Minnesota.
+
+        This keeps the equation-wise sampling path used by
+        :meth:`PriorSpec.niw_minnesota_canonical`, but geometrically blends the
+        legacy and canonical coefficient variances:
+
+        - ``alpha=0.0`` reproduces the legacy variance map
+        - ``alpha=1.0`` reproduces the canonical variance map
+
+        Notes
+        -----
+        This is an explicit experimental mitigation path. It does not redefine the
+        semantics of :meth:`PriorSpec.niw_minnesota_canonical`.
+        """
+        alpha_f = float(alpha)
+        if not np.isfinite(alpha_f) or not (0.0 <= alpha_f <= 1.0):
+            raise ValueError("alpha must be finite and in [0, 1]")
+
+        legacy = PriorSpec.niw_minnesota_legacy(
+            p=p,
+            y=y,
+            n=n,
+            include_intercept=include_intercept,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+            min_sigma2=min_sigma2,
+        )
+        canonical = PriorSpec.niw_minnesota_canonical(
+            p=p,
+            y=y,
+            n=n,
+            include_intercept=include_intercept,
+            lambda1=lambda1,
+            lambda2=lambda2,
+            lambda3=lambda3,
+            lambda4=lambda4,
+            own_lag_means=own_lag_means,
+            own_lag_mean=own_lag_mean,
+            min_sigma2=min_sigma2,
+        )
+        canonical_meta = canonical.minnesota_canonical
+        if canonical_meta is None:
+            raise RuntimeError("canonical Minnesota metadata missing")
+
+        n_eq = canonical.niw.m0.shape[1]
+        legacy_diag = np.diag(np.asarray(legacy.niw.v0, dtype=float))
+        legacy_var = np.repeat(legacy_diag.reshape(-1, 1), repeats=n_eq, axis=1)
+        canonical_var = 1.0 / np.asarray(canonical_meta.inv_v0_vec, dtype=float).reshape(
+            legacy_var.shape,
+            order="F",
+        )
+        tempered_var = _tempered_minnesota_variances(
+            legacy_var=legacy_var,
+            canonical_var=canonical_var,
+            alpha=alpha_f,
+        )
+        v0_summary = np.diag(np.mean(tempered_var, axis=1))
+        niw = NIWPrior(
+            m0=np.asarray(canonical.niw.m0, dtype=float).copy(),
+            v0=v0_summary,
+            s0=np.asarray(canonical.niw.s0, dtype=float).copy(),
+            nu0=float(canonical.niw.nu0),
+        )
+        tempered = MinnesotaCanonicalSpec(
+            sigma2=np.asarray(canonical_meta.sigma2, dtype=float).copy(),
+            inv_v0_vec=1.0 / tempered_var.reshape(-1, order="F"),
+            mode="tempered",
+            tempered_alpha=alpha_f,
+        )
+        return PriorSpec(
+            family="niw",
+            niw=niw,
+            minnesota_canonical=tempered,
+        )
 
     @staticmethod
     def from_ssvs(

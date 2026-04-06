@@ -26,6 +26,10 @@ A **shadow rate** is a latent (unobserved) policy rate intended to represent the
 
 A structured shrinkage prior for VAR coefficients, typically shrinking toward a random-walk / white-noise baseline with lag decay and cross-variable shrinkage.
 
+In `srvar-toolkit`, `PriorSpec.niw_minnesota_legacy(...)` is the historical compatibility path,
+while `PriorSpec.niw_minnesota_canonical(...)` provides explicit equation-wise Minnesota shrinkage
+for homoskedastic and diagonal SV models.
+
 ## SSVS
 
 **Stochastic search variable selection**. A spike-and-slab prior with inclusion indicators that stochastically include/exclude predictor rows.

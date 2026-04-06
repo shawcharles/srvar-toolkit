@@ -1,0 +1,77 @@
+# Local benchmark backtest: transformed quarterly 15-variable macro panel from repo vintages
+#
+# Preparation:
+#   python scripts/prepare_vintage_macro15_benchmark.py \
+#     --vintage 2022Q3 \
+#     --out data/cache/vintage_macro15_quarterly.csv
+#
+# Run:
+#   srvar backtest config/vintage_macro15_backtest_homoskedastic.yaml \
+#     --out outputs/vintage_macro15_backtest_homoskedastic
+
+data:
+  csv_path: "data/cache/vintage_macro15_quarterly.csv"
+  date_column: "date"
+  variables:
+    - GDP
+    - UNRATE
+    - CPIAUCSL
+    - FEDFUNDS
+    - PAYEMS
+    - HOUST
+    - INDPRO
+    - MCUMFN
+    - EXUSUK
+    - M2SL
+    - PINCOME
+    - PCECC96
+    - PPIACO
+    - GS10
+    - BAA
+  dropna: true
+
+model:
+  p: 4
+  include_intercept: true
+
+prior:
+  family: "niw"
+  method: "minnesota_legacy"
+  minnesota:
+    lambda1: 0.2
+    lambda2: 0.5
+    lambda3: 2.0
+    lambda4: 25.0
+    own_lag_means: [0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1]
+
+sampler:
+  draws: 120
+  burn_in: 40
+  thin: 2
+  seed: 123
+
+backtest:
+  mode: "expanding"
+  min_obs: 80
+  step: 4
+  horizons: [1, 2, 4]
+  draws: 120
+  quantile_levels: [0.1, 0.5, 0.9]
+  origin_start: "1995-01-01"
+  origin_end: "2019-01-01"
+
+evaluation:
+  metrics_table: true
+  coverage:
+    enabled: true
+    intervals: [0.5, 0.8, 0.9]
+  crps:
+    enabled: true
+  pit:
+    enabled: false
+
+output:
+  out_dir: "outputs/vintage_macro15_backtest_homoskedastic"
+  save_plots: false
+  save_forecasts: false
+  store_forecasts_in_memory: false

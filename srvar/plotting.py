@@ -5,6 +5,13 @@ from typing import Any
 
 import numpy as np
 
+from .evaluation_common import (
+    extract_series_draws,
+    interval_hit_vector,
+    mean_of_finite,
+    pit_vector,
+    score_vector_from_draws,
+)
 from .metrics import crps_draws
 from .results import FitResult, ForecastResult
 from .theme import (
@@ -37,6 +44,115 @@ def _time_index_to_array(index: Any) -> np.ndarray:
 
 def _is_datetime_like(x: np.ndarray) -> bool:
     return bool(np.issubdtype(np.asarray(x).dtype, np.datetime64))
+
+
+def _coverage_curve(
+    forecasts: list[ForecastResult],
+    y_true: np.ndarray,
+    *,
+    horizon_indices: list[int],
+    intervals: list[float],
+    var_index: int | None,
+    use_latent: bool,
+) -> dict[float, np.ndarray]:
+    yt = np.asarray(y_true, dtype=float)
+    cov_by_int: dict[float, np.ndarray] = {}
+    for c in intervals:
+        cov = np.full(len(horizon_indices), np.nan, dtype=float)
+        for hh, h in enumerate(horizon_indices):
+            if var_index is None:
+                hits_all = [
+                    interval_hit_vector(
+                        yt[:, h, j],
+                        extract_series_draws(
+                            forecasts,
+                            horizon_index=h,
+                            var_index=j,
+                            use_latent=use_latent,
+                        ),
+                        interval=c,
+                    )
+                    for j in range(int(yt.shape[2]))
+                ]
+                cov[hh] = mean_of_finite(np.concatenate(hits_all))
+            else:
+                cov[hh] = mean_of_finite(
+                    interval_hit_vector(
+                        yt[:, h, var_index],
+                        extract_series_draws(
+                            forecasts,
+                            horizon_index=h,
+                            var_index=var_index,
+                            use_latent=use_latent,
+                        ),
+                        interval=c,
+                    )
+                )
+        cov_by_int[c] = cov
+    return cov_by_int
+
+
+def _pit_values(
+    forecasts: list[ForecastResult],
+    y_true: np.ndarray,
+    *,
+    horizon_index: int,
+    var_index: int,
+    use_latent: bool,
+) -> np.ndarray:
+    yt = np.asarray(y_true, dtype=float)
+    values = pit_vector(
+        yt[:, horizon_index, var_index],
+        extract_series_draws(
+            forecasts,
+            horizon_index=horizon_index,
+            var_index=var_index,
+            use_latent=use_latent,
+        ),
+    )
+    return values[np.isfinite(values)]
+
+
+def _crps_curve(
+    forecasts: list[ForecastResult],
+    y_true: np.ndarray,
+    *,
+    horizon_indices: list[int],
+    var_index: int | None,
+    use_latent: bool,
+) -> np.ndarray:
+    yt = np.asarray(y_true, dtype=float)
+    out = np.full(len(horizon_indices), np.nan, dtype=float)
+    for hh, h in enumerate(horizon_indices):
+        if var_index is None:
+            vals_all = [
+                score_vector_from_draws(
+                    yt[:, h, j],
+                    extract_series_draws(
+                        forecasts,
+                        horizon_index=h,
+                        var_index=j,
+                        use_latent=use_latent,
+                    ),
+                    crps_draws,
+                )
+                for j in range(int(yt.shape[2]))
+            ]
+            out[hh] = mean_of_finite(np.concatenate(vals_all))
+        else:
+            out[hh] = mean_of_finite(
+                score_vector_from_draws(
+                    yt[:, h, var_index],
+                    extract_series_draws(
+                        forecasts,
+                        horizon_index=h,
+                        var_index=var_index,
+                        use_latent=use_latent,
+                    ),
+                    crps_draws,
+                )
+            )
+    return out
 
 
 def plot_shadow_rate(
@@ -201,28 +317,14 @@ def plot_forecast_coverage(
             if not np.isfinite(c) or not (0.0 < c < 1.0):
                 raise ValueError("intervals must be in (0, 1)")
 
-        cov_by_int: dict[float, np.ndarray] = {}
-        for c in intervals_f:
-            qlo = 0.5 - 0.5 * c
-            qhi = 0.5 + 0.5 * c
-
-            hits = np.empty((k, len(h_idx)), dtype=float)
-            for i, fc in enumerate(forecasts):
-                sims = fc.latent_draws if (use_latent and fc.latent_draws is not None) else fc.draws
-                sims = np.asarray(sims, dtype=float)
-                if var_idx is None:
-                    lo = np.quantile(sims, q=qlo, axis=0)[h_idx, :]
-                    hi = np.quantile(sims, q=qhi, axis=0)[h_idx, :]
-                    yti = yt[i][h_idx, :]
-                    ok = (yti >= lo) & (yti <= hi)
-                    hits[i] = np.mean(ok, axis=1)
-                else:
-                    y = yt[i, :, var_idx][h_idx]
-                    lo = np.quantile(sims[:, :, var_idx], q=qlo, axis=0)[h_idx]
-                    hi = np.quantile(sims[:, :, var_idx], q=qhi, axis=0)[h_idx]
-                    hits[i] = ((y >= lo) & (y <= hi)).astype(float)
-
-            cov_by_int[c] = hits.mean(axis=0)
+        cov_by_int = _coverage_curve(
+            forecasts,
+            yt,
+            horizon_indices=h_idx,
+            intervals=intervals_f,
+            var_index=var_idx,
+            use_latent=use_latent,
+        )
 
         x = np.asarray(h_list, dtype=int)
         if ax is None:
@@ -282,12 +384,13 @@ def plot_pit_histogram(
         if yt.shape[1] != hmax:
             raise ValueError("y_true horizon dimension must match forecasts")
 
-        u = np.empty(k, dtype=float)
-        for i, fc in enumerate(forecasts):
-            sims = fc.latent_draws if (use_latent and fc.latent_draws is not None) else fc.draws
-            sims = np.asarray(sims, dtype=float)
-            y = float(yt[i, h_idx, var_idx])
-            u[i] = float(np.mean(sims[:, h_idx, var_idx] <= y))
+        u = _pit_values(
+            forecasts,
+            yt,
+            horizon_index=h_idx,
+            var_index=var_idx,
+            use_latent=use_latent,
+        )
 
         if ax is None:
             fig, ax = plt.subplots(figsize=get_figsize("single", theme))
@@ -366,24 +469,13 @@ def plot_crps_by_horizon(
             h_list = sorted(h_list)
         h_idx = [h - 1 for h in h_list]
 
-        crps_h = np.zeros(len(h_idx), dtype=float)
-        counts_h = np.zeros(len(h_idx), dtype=int)
-
-        for i, fc in enumerate(forecasts):
-            sims = fc.latent_draws if (use_latent and fc.latent_draws is not None) else fc.draws
-            sims = np.asarray(sims, dtype=float)
-            for hh, h in enumerate(h_idx):
-                if var_idx is None:
-                    for j in range(n):
-                        y = float(yt[i, h, j])
-                        crps_h[hh] += crps_draws(y, sims[:, h, j])
-                        counts_h[hh] += 1
-                else:
-                    y = float(yt[i, h, var_idx])
-                    crps_h[hh] += crps_draws(y, sims[:, h, var_idx])
-                    counts_h[hh] += 1
-
-        crps_mean = np.where(counts_h > 0, crps_h / np.maximum(counts_h, 1), np.nan)
+        crps_mean = _crps_curve(
+            forecasts,
+            yt,
+            horizon_indices=h_idx,
+            var_index=var_idx,
+            use_latent=use_latent,
+        )
 
         x = np.asarray(h_list, dtype=int)
         if ax is None:

@@ -55,7 +55,7 @@
 
 - **Effective Lower Bound (ELB) constraints** — Model interest rates that are censored at the zero lower bound
 - **Stochastic volatility** — Capture time-varying uncertainty in economic variables
-- **Minnesota-style shrinkage** — Improve forecast accuracy with informative priors
+- **Legacy Minnesota-style NIW shrinkage** — Structured shrinkage on the historical compatibility path
 - **Variable selection (SSVS)** — Identify which predictors matter most
 
 The toolkit is designed for researchers and practitioners who need transparent, reproducible Bayesian VAR estimation without the overhead of large econometric frameworks.
@@ -91,7 +91,9 @@ The toolkit is designed for researchers and practitioners who need transparent, 
 | Component | Description | How to Enable | Status |
 |-----------|-------------|---------------|--------|
 | **Conjugate BVAR (NIW)** | Closed-form posterior updates and fast sampling for VAR coefficients/covariance | `PriorSpec.niw_default(...)` | Supported |
-| **Minnesota Shrinkage** | Minnesota-style shrinkage via NIW prior construction | `PriorSpec.niw_minnesota(...)` | Supported |
+| **Legacy Minnesota-style NIW shrinkage** | Historical Minnesota-style NIW construction (non-canonical; compatibility path) | `PriorSpec.niw_minnesota_legacy(...)` | Supported |
+| **Canonical Minnesota shrinkage** | Equation-wise Minnesota own-vs-cross shrinkage for homoskedastic and diagonal SV models | `PriorSpec.niw_minnesota_canonical(...)` or `prior.method: "minnesota_canonical"` | Supported (homo + diagonal SV) |
+| **Tempered Minnesota bridge** | Experimental geometric bridge between legacy and canonical Minnesota scaling | `PriorSpec.niw_minnesota_tempered(...)` or `prior.method: "minnesota_tempered"` | Experimental (diagonal SV only) |
 | **Variable Selection (SSVS)** | Spike-and-slab inclusion indicators for stochastic search | `PriorSpec.from_ssvs(...)` | Supported |
 | **Bayesian LASSO (BLASSO)** | Bayesian LASSO shrinkage prior for VAR coefficients (global or adaptive) | `PriorSpec.from_blasso(...)` | Supported |
 | **Shadow-Rate / ELB** | Latent shadow-rate sampling at the effective lower bound | `ModelSpec(elb=ElbSpec(...))` | Supported |
@@ -319,12 +321,21 @@ model = ModelSpec(
     volatility=VolatilitySpec(enabled=True)
 )
 
-# Fit with Minnesota prior
-prior = PriorSpec.niw_minnesota(p=4, y=data_array, n=n_vars)
+# Fit with the explicit legacy Minnesota-style NIW prior
+prior = PriorSpec.niw_minnesota_legacy(p=4, y=data_array, n=n_vars)
 sampler = SamplerConfig(draws=2000, burn_in=500, thin=2)
 
 fit_res = fit(dataset, model, prior, sampler)
 ```
+
+`PriorSpec.niw_minnesota(...)` remains available as a backward-compatible alias for
+`PriorSpec.niw_minnesota_legacy(...)`. For equation-specific own-vs-cross shrinkage, use
+`PriorSpec.niw_minnesota_canonical(...)` or `prior.method: "minnesota_canonical"`; that explicit
+canonical path currently supports homoskedastic models and diagonal stochastic volatility.
+Triangular and factor SV remain on the legacy NIW path. For diagonal-SV sensitivity work, the
+experimental bridge `PriorSpec.niw_minnesota_tempered(..., alpha=0.25)` and
+`prior.method: "minnesota_tempered"` keep the equation-wise path but temper the canonical
+variance map back toward the legacy baseline.
 
 ### Plotting
 
@@ -467,7 +478,7 @@ When you run `srvar backtest`, outputs are written into `output.out_dir` (or `--
 ## Roadmap
 
 - [x] Conjugate BVAR (NIW) with closed-form posteriors
-- [x] Minnesota-style shrinkage priors
+- [x] Legacy Minnesota-style NIW shrinkage priors
 - [x] Stochastic Search Variable Selection (SSVS)
 - [x] Shadow-rate / ELB data augmentation
 - [x] Stochastic volatility (RW/AR1; diagonal/triangular covariance)
@@ -556,9 +567,9 @@ If you use **srvar-toolkit** in your research, please cite both the software and
 @software{shaw2025srvar,
   author       = {Shaw, Charles},
   title        = {srvar-toolkit: Shadow-Rate VAR Toolkit for Python},
-  year         = {2025},
+  year         = {2026},
   url          = {https://github.com/shawcharles/srvar-toolkit},
-  version      = {0.2.0}
+  version      = {0.3.0}
 }
 ```
 

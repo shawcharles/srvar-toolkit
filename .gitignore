@@ -60,6 +60,9 @@ README_OLD.md
 audit.md
 memory-bank/
 
+
+
+
 # Papers / research artifacts (mostly large/unversioned)
 papers/*
 !papers/__init__.py
@@ -78,6 +81,7 @@ arXiv-preprint/
 
 .windsurf/
 .windsurfrules
+.planning/
 
 REPO_REVIEW.md
 IMPLEMENTATION_PLAN.md

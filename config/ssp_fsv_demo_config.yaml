@@ -54,7 +54,7 @@ model:
 
 prior:
   family: "niw"
-  method: "minnesota"
+  method: "minnesota_legacy"
 
 sampler:
   draws: 800

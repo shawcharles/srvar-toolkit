@@ -37,7 +37,7 @@ model:
 
 prior:
   family: "niw"
-  method: "minnesota"
+  method: "minnesota_legacy"
   minnesota:
     lambda1: 0.22
     lambda2: 0.52

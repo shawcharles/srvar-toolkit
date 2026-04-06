@@ -45,7 +45,7 @@ model:
 
 prior:
   family: "niw"
-  method: "minnesota"
+  method: "minnesota_legacy"
   minnesota:
     # Paper (Table 1 / text): θ1=0.22, θ2=0.52, θ3=100, θ4=2
     lambda1: 0.22

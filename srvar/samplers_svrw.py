@@ -10,6 +10,7 @@ from .samplers_blasso import _blasso_update_adaptive, _blasso_update_global, _bl
 from .samplers_dl import _dl_sample_beta_svrw, _dl_update
 from .samplers_ssp import (
     _asum_from_beta,
+    _strip_intercept_eqwise_precision,
     _strip_intercept_niw_blocks,
     sample_mu_gamma,
     sample_steady_state_mu_svrw,
@@ -77,15 +78,17 @@ def _fit_svrw(
 
         niw = prior.niw
         prior_family = prior.family.lower()
+        prior_mode = "minnesota_canonical" if prior.minnesota_canonical is not None else prior_family
 
-        blasso = prior.blasso if prior_family == "blasso" else None
-        if prior_family == "blasso" and blasso is None:
+        blasso = prior.blasso if prior_mode == "blasso" else None
+        if prior_mode == "blasso" and blasso is None:
             raise ValueError("prior.family='blasso' requires prior.blasso")
-        dl = prior.dl if prior_family == "dl" else None
-        if prior_family == "dl" and dl is None:
+        dl = prior.dl if prior_mode == "dl" else None
+        if prior_mode == "dl" and dl is None:
             raise ValueError("prior.family='dl' requires prior.dl")
         if prior_family == "ssvs":
             raise ValueError("prior.family='ssvs' is not supported with volatility")
+        canonical = prior.minnesota_canonical if prior_mode == "minnesota_canonical" else None
 
         tau: np.ndarray | None = None
         lambda_: float | None = None
@@ -104,7 +107,7 @@ def _fit_svrw(
         mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
         beta_lags = mn.copy()
 
-        if prior_family == "blasso":
+        if prior_mode == "blasso":
             if blasso is None:
                 raise RuntimeError("blasso spec missing")
             tau = np.full(x.shape[1], float(blasso.tau_init), dtype=float)
@@ -115,7 +118,7 @@ def _fit_svrw(
                 lambda_L = float(blasso.lambda_init)
                 c_mask = np.zeros(x.shape[1], dtype=bool)
 
-        if prior_family == "dl":
+        if prior_mode == "dl":
             if dl is None:
                 raise RuntimeError("dl spec missing")
             km = int(x.shape[1] * y.shape[1])
@@ -149,14 +152,29 @@ def _fit_svrw(
                 m0=niw.m0, v0=niw.v0, k_no_intercept=x.shape[1]
             )
 
-            if prior_family == "dl":
+            if prior_mode == "dl":
                 if dl_inv_v0 is None:
                     raise RuntimeError("dl state missing")
                 beta_lags = _dl_sample_beta_svrw(
                     x=x, y=y, m0=m0_ssp, inv_v0_vec=dl_inv_v0, h=h, rng=rng
                 )
+            elif prior_mode == "minnesota_canonical":
+                if canonical is None:
+                    raise RuntimeError("canonical Minnesota state missing")
+                beta_lags = _dl_sample_beta_svrw(
+                    x=x,
+                    y=y,
+                    m0=m0_ssp,
+                    inv_v0_vec=_strip_intercept_eqwise_precision(
+                        inv_v0_vec=canonical.inv_v0_vec,
+                        n=y.shape[1],
+                        k_no_intercept=x.shape[1],
+                    ),
+                    h=h,
+                    rng=rng,
+                )
             else:
-                if prior_family == "blasso":
+                if prior_mode == "blasso":
                     if tau is None:
                         raise RuntimeError("blasso state missing")
                     v0 = _blasso_v0_from_state(tau=tau)
@@ -284,7 +302,7 @@ def _fit_svrw(
                         rng=rng,
                     )
 
-            if prior_family == "blasso":
+            if prior_mode == "blasso":
                 if blasso is None or tau is None:
                     raise RuntimeError("blasso state missing")
                 if blasso.mode == "global":
@@ -313,7 +331,7 @@ def _fit_svrw(
                         c_mask=c_mask,
                         rng=rng,
                     )
-            elif prior_family == "dl":
+            elif prior_mode == "dl":
                 if (
                     dl_psi is None
                     or dl_vartheta is None
@@ -391,12 +409,14 @@ def _fit_svrw(
 
     niw = prior.niw
     prior_family = prior.family.lower()
-    blasso = prior.blasso if prior_family == "blasso" else None
-    if prior_family == "blasso" and blasso is None:
+    prior_mode = "minnesota_canonical" if prior.minnesota_canonical is not None else prior_family
+    blasso = prior.blasso if prior_mode == "blasso" else None
+    if prior_mode == "blasso" and blasso is None:
         raise ValueError("prior.family='blasso' requires prior.blasso")
-    dl = prior.dl if prior_family == "dl" else None
-    if prior_family == "dl" and dl is None:
+    dl = prior.dl if prior_mode == "dl" else None
+    if prior_mode == "dl" and dl is None:
         raise ValueError("prior.family='dl' requires prior.dl")
+    canonical = prior.minnesota_canonical if prior_mode == "minnesota_canonical" else None
 
     tau = None
     lambda_ = None
@@ -412,7 +432,7 @@ def _fit_svrw(
     mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
     beta = mn.copy()
 
-    if prior_family == "blasso":
+    if prior_mode == "blasso":
         if blasso is None:
             raise RuntimeError("blasso spec missing")
         tau = np.full(x.shape[1], float(blasso.tau_init), dtype=float)
@@ -425,7 +445,7 @@ def _fit_svrw(
             if model.include_intercept:
                 c_mask[0] = True
 
-    if prior_family == "dl":
+    if prior_mode == "dl":
         if dl is None:
             raise RuntimeError("dl spec missing")
         km = int(x.shape[1] * y.shape[1])
@@ -451,12 +471,23 @@ def _fit_svrw(
     for it in range(sampler.draws):
         x, y = design_matrix(y_lat, model.p, include_intercept=model.include_intercept)
 
-        if prior_family == "dl":
+        if prior_mode == "dl":
             if dl_inv_v0 is None:
                 raise RuntimeError("dl state missing")
             beta = _dl_sample_beta_svrw(x=x, y=y, m0=niw.m0, inv_v0_vec=dl_inv_v0, h=h, rng=rng)
+        elif prior_mode == "minnesota_canonical":
+            if canonical is None:
+                raise RuntimeError("canonical Minnesota state missing")
+            beta = _dl_sample_beta_svrw(
+                x=x,
+                y=y,
+                m0=niw.m0,
+                inv_v0_vec=canonical.inv_v0_vec,
+                h=h,
+                rng=rng,
+            )
         else:
-            if prior_family == "blasso":
+            if prior_mode == "blasso":
                 if tau is None or blasso is None:
                     raise RuntimeError("blasso state missing")
                 v0 = _blasso_v0_from_state(tau=tau)
@@ -551,7 +582,7 @@ def _fit_svrw(
                     rng=rng,
                 )
 
-        if prior_family == "blasso":
+        if prior_mode == "blasso":
             if blasso is None or tau is None:
                 raise RuntimeError("blasso state missing")
             if blasso.mode == "global":
@@ -581,7 +612,7 @@ def _fit_svrw(
                     rng=rng,
                 )
 
-        elif prior_family == "dl":
+        elif prior_mode == "dl":
             if (
                 dl_psi is None
                 or dl_vartheta is None

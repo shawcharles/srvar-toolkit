@@ -106,12 +106,22 @@ The run writes outputs to `output.out_dir` (or the `--out` override). Typical ar
 - `--verbose`: print more detailed progress output
 - `--no-color`: disable ANSI colors (useful for CI logs)
 
-## When should I use `niw_default` vs Minnesota shrinkage?
+## When should I use `niw_default` vs Minnesota-style shrinkage?
 
 - `PriorSpec.niw_default(...)` is a simple conjugate baseline and is useful for smoke tests and sanity checks.
-- `PriorSpec.niw_minnesota(...)` introduces structured shrinkage that is often a better default for macro forecasting.
+- `PriorSpec.niw_minnesota_legacy(...)` provides the toolkit's current legacy Minnesota-style NIW shrinkage path and is often a better forecasting baseline than the plain default prior.
+- `PriorSpec.niw_minnesota_canonical(...)` provides equation-specific own-vs-cross Minnesota shrinkage for homoskedastic models and diagonal SV.
+- `PriorSpec.niw_minnesota_tempered(...)` is an experimental diagonal-SV-only bridge between the legacy and canonical variance maps.
 
-When in doubt, start with Minnesota shrinkage and then do sensitivity checks.
+`PriorSpec.niw_minnesota(...)` is retained as a backward-compatible alias for
+`PriorSpec.niw_minnesota_legacy(...)`. Use the explicit canonical path only on its supported
+boundary; triangular and factor SV still require the legacy NIW route. Use the tempered path
+only as an explicit sensitivity-analysis option; it does not replace or relabel canonical
+Minnesota.
+
+When in doubt, start with the explicit legacy path for reproducibility and then do sensitivity
+checks against the canonical path where supported. If diagonal SV is unstable under the
+canonical path, the tempered bridge is the next bounded experiment.
 
 ## Why does increasing lag order `p` slow things down so much?
 

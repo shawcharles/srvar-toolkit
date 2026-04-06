@@ -70,8 +70,11 @@ prior:
 
   # For NIW, choose one of:
   #   method: "default"   -> PriorSpec.niw_default
-  #   method: "minnesota" -> PriorSpec.niw_minnesota (recommended)
-  method: "minnesota"
+  #   method: "minnesota" -> backward-compatible alias for the legacy path
+  #   method: "minnesota_legacy" -> PriorSpec.niw_minnesota_legacy (recommended)
+  #   method: "minnesota_canonical" -> explicit canonical path (homo + diagonal SV only)
+  #   method: "minnesota_tempered" -> experimental bridge path (diagonal SV only)
+  method: "minnesota_legacy"
 
   # Minnesota hyperparameters (optional; defaults are reasonable starting points).
   minnesota:
@@ -79,6 +82,7 @@ prior:
     lambda2: 0.5
     lambda3: 1.0
     lambda4: 100.0
+    # tempered_alpha: 0.25  # only used with method: "minnesota_tempered"
 
 sampler:
   # Total Gibbs iterations / draws.

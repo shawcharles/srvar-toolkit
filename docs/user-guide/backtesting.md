@@ -28,7 +28,165 @@ srvar backtest config/backtest_demo_config.yaml --out outputs/my_backtest
 srvar backtest config/backtest_demo_config.yaml --quiet
 srvar backtest config/backtest_demo_config.yaml --no-color
 srvar backtest config/backtest_demo_config.yaml --verbose
+
+# Paired legacy-vs-canonical Minnesota comparison
+python scripts/compare_minnesota_backtests.py config/backtest_demo_config.yaml \
+  --out-root outputs/minnesota_comparison
 ```
+
+The comparison script writes paired `baseline/` and `candidate/` backtest directories plus a
+`metrics_comparison.csv` file built from the two `metrics.csv` tables.
+
+To consolidate multiple paired comparison bundles into one table, run:
+
+```bash
+python scripts/summarize_minnesota_comparisons.py \
+  --root outputs/minnesota_comparison \
+  --out-csv outputs/minnesota_comparison/summary.csv \
+  --out-md outputs/minnesota_comparison/summary.md
+```
+
+This writes one row per benchmark with baseline/candidate metric means and deltas.
+
+To inspect one paired comparison bundle variable by variable across horizons, run:
+
+```bash
+python scripts/summarize_metrics_comparison_by_variable.py \
+  outputs/minnesota_comparison/vintage_macro15_homoskedastic/metrics_comparison.csv
+```
+
+This writes `variable_summary.csv` and `variable_summary.md` alongside the input comparison file.
+
+If the paired backtests were run with saved forecast artifacts, you can also compare predictive
+dispersion directly:
+
+```bash
+python scripts/compare_minnesota_backtests.py config/vintage_macro15_backtest_diagonal_sv.yaml \
+  --out-root outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv \
+  --save-forecasts
+
+python scripts/compare_forecast_dispersion.py \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/baseline/forecasts \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/candidate/forecasts
+```
+
+This writes `forecast_dispersion_summary.csv` and `forecast_dispersion_summary.md` with
+variable/horizon averages for predictive standard deviation and central interval widths.
+
+To compare forecast means against realized outcomes origin by origin from saved forecast bundles:
+
+```bash
+python scripts/compare_forecast_means_to_realized.py \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/baseline \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/candidate \
+  --variables EXUSUK PPIACO CPIAUCSL M2SL
+```
+
+This writes `forecast_mean_summary.csv` and `forecast_mean_summary.md` with mean forecast centers,
+signed errors, absolute errors, and counts of origins where the candidate is closer to realized.
+
+For a narrow origin-level deep dive, filter specific cases and write the raw rows:
+
+```bash
+python scripts/compare_forecast_means_to_realized.py \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/baseline \
+  outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/candidate \
+  --cases EXUSUK:1 EXUSUK:2 CPIAUCSL:4 PPIACO:2 M2SL:2 \
+  --out-detail-csv outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/case_detail.csv \
+  --out-detail-md outputs/minnesota_diagnostics/vintage_macro15_diagonal_sv/case_detail.md
+```
+
+To reproduce one scheduled origin as paired baseline/candidate fits, save the fit artifacts,
+and compare coefficient means plus end-of-sample volatility states directly:
+
+```bash
+python scripts/diagnose_minnesota_origin.py \
+  config/vintage_macro15_backtest_diagonal_sv.yaml \
+  --out-root outputs/minnesota_origin_diagnostics/vintage_macro15_diagonal_sv_2009q1 \
+  --origin-date 2009-01-01 \
+  --variables EXUSUK PPIACO CPIAUCSL M2SL \
+  --horizons 1 2 4
+```
+
+This writes paired `baseline/` and `candidate/` run directories with `fit_result.npz` and
+`forecast_result.npz`, plus `state_comparison.csv`, `forecast_comparison.csv`,
+`beta_mean_comparison.csv`, and compact Markdown summaries for the state table, forecast table,
+and top coefficient deltas.
+
+To compare the full posterior draw distributions for selected coefficients from those paired fit
+artifacts, run:
+
+```bash
+python scripts/compare_fit_coefficients.py \
+  outputs/minnesota_origin_diagnostics/vintage_macro15_diagonal_sv_2009q1/baseline \
+  outputs/minnesota_origin_diagnostics/vintage_macro15_diagonal_sv_2009q1/candidate \
+  --cases \
+    EXUSUK:const EXUSUK:HOUST_lag1 EXUSUK:GS10_lag1 EXUSUK:FEDFUNDS_lag1 \
+    PPIACO:const PPIACO:HOUST_lag2 PPIACO:GS10_lag1 PPIACO:CPIAUCSL_lag1
+```
+
+This writes `fit_coefficient_summary.csv` and `fit_coefficient_summary.md` with posterior means,
+central quantiles, sign probabilities, and simple overlap/flip diagnostics. Optional detail
+outputs can be requested to export the long-format draw table.
+
+To inspect the prior-scale driver directly at one scheduled origin, compare the legacy and
+canonical Minnesota coefficient variances:
+
+```bash
+python scripts/diagnose_minnesota_prior_scales.py \
+  config/vintage_macro15_backtest_diagonal_sv.yaml \
+  --out-root outputs/minnesota_prior_scale_diagnostics/vintage_macro15_diagonal_sv_2009q1 \
+  --origin-date 2009-01-01 \
+  --cases \
+    EXUSUK:const EXUSUK:HOUST_lag1 EXUSUK:GS10_lag1 EXUSUK:FEDFUNDS_lag1 EXUSUK:EXUSUK_lag1 \
+    PPIACO:const PPIACO:HOUST_lag2 PPIACO:GS10_lag1 PPIACO:CPIAUCSL_lag1 PPIACO:PPIACO_lag1
+```
+
+This writes `prior_scale_comparison.csv` plus compact Markdown summaries showing how much looser
+or tighter the canonical prior is for each selected coefficient, along with the corresponding
+`sigma2` scale terms and the closed-form expected ratio implied by the legacy-vs-canonical
+construction.
+
+For a bounded mitigation experiment, you can also run a three-way origin comparison with a
+tempered bridge prior between legacy and canonical Minnesota:
+
+```bash
+python scripts/experiment_tempered_minnesota_origin.py \
+  config/vintage_macro15_backtest_diagonal_sv.yaml \
+  --out-root outputs/minnesota_tempered_origin/vintage_macro15_diagonal_sv_2009q1_alpha05 \
+  --origin-date 2009-01-01 \
+  --alpha 0.5 \
+  --variables EXUSUK PPIACO CPIAUCSL M2SL \
+  --horizons 1 2 4
+```
+
+This writes paired `baseline/`, `canonical/`, and `tempered/` fit/forecast artifacts plus
+three-way `forecast_comparison.csv`, `state_comparison.csv`, and `beta_comparison.csv` tables.
+`alpha=0` reproduces the legacy variance map, while `alpha=1` reproduces the canonical variance
+map. This diagnostic experiment currently requires a diagonal-SV backtest config.
+
+For a larger fully local benchmark dataset, first build the quarterly term-spread/NFCI panel and
+then run the tracked config:
+
+```bash
+python scripts/prepare_term_nfci_benchmark.py --out data/cache/term_nfci_quarterly.csv
+srvar backtest config/term_nfci_backtest.yaml --out outputs/term_nfci_backtest
+srvar backtest config/term_nfci_backtest_homoskedastic.yaml \
+  --out outputs/term_nfci_backtest_homoskedastic
+python scripts/prepare_term_nfci_wuxia_benchmark.py --out data/cache/term_nfci_wuxia_quarterly.csv
+srvar backtest config/term_nfci_wuxia_backtest.yaml --out outputs/term_nfci_wuxia_backtest
+python scripts/prepare_vintage_macro15_benchmark.py \
+  --vintage 2022Q3 \
+  --out data/cache/vintage_macro15_quarterly.csv
+srvar backtest config/vintage_macro15_backtest_homoskedastic.yaml \
+  --out outputs/vintage_macro15_backtest_homoskedastic
+srvar backtest config/vintage_macro15_backtest_diagonal_sv.yaml \
+  --out outputs/vintage_macro15_backtest_diagonal_sv
+```
+
+The vintage-based benchmark uses the repo’s local quarterly vintage workbooks, fixes the source
+vintage at `2022Q3`, and applies simple benchmark transforms before backtesting. Tracked
+companion configs are provided for both homoskedastic and diagonal-SV comparisons.
 
 ## YAML schema (high level)
 

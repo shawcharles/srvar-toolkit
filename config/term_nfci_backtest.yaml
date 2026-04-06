@@ -1,0 +1,64 @@
+# Local benchmark backtest: quarterly term spread + NFCI
+#
+# Preparation:
+#   python scripts/prepare_term_nfci_benchmark.py --out data/cache/term_nfci_quarterly.csv
+#
+# Run:
+#   srvar backtest config/term_nfci_backtest.yaml --out outputs/term_nfci_backtest
+
+data:
+  csv_path: "data/cache/term_nfci_quarterly.csv"
+  date_column: "date"
+  variables: ["T10Y2Y", "NFCI"]
+  dropna: true
+
+model:
+  p: 2
+  include_intercept: true
+  volatility:
+    enabled: true
+    dynamics: "rw"
+    covariance: "diagonal"
+
+prior:
+  family: "niw"
+  method: "minnesota_legacy"
+  minnesota:
+    lambda1: 0.2
+    lambda2: 0.5
+    lambda3: 1.0
+    lambda4: 25.0
+
+sampler:
+  draws: 160
+  burn_in: 40
+  thin: 2
+  seed: 123
+
+backtest:
+  mode: "expanding"
+  min_obs: 60
+  step: 4
+  horizons: [1, 2, 4]
+  draws: 150
+  quantile_levels: [0.1, 0.5, 0.9]
+  origin_start: "2000-01-01"
+  origin_end: "2020-01-01"
+
+evaluation:
+  metrics_table: true
+  coverage:
+    enabled: true
+    intervals: [0.5, 0.8, 0.9]
+    use_latent: false
+  crps:
+    enabled: true
+    use_latent: false
+  pit:
+    enabled: false
+
+output:
+  out_dir: "outputs/term_nfci_backtest"
+  save_plots: false
+  save_forecasts: false
+  store_forecasts_in_memory: false

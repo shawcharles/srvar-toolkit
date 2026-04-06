@@ -16,8 +16,8 @@ authors:
 repository-code: "https://github.com/shawcharles/srvar-toolkit"
 url: "https://srvar-toolkit.charlesshaw.net/"
 license: MIT
-version: 0.2.0
-date-released: "2026-01-19"
+version: 0.3.0
+date-released: "2026-04-06"
 keywords:
   - bayesian
   - var
@@ -40,7 +40,8 @@ preferred-citation:
     - family-names: Shaw
       given-names: Charles
   title: "srvar-toolkit: Shadow-Rate VAR Toolkit for Python"
-  year: 2025
+  year: 2026
+  version: 0.3.0
   url: "https://github.com/shawcharles/srvar-toolkit"
 references:
   - type: article

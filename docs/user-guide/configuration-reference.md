@@ -150,7 +150,7 @@ Notes / current limitations:
 ```yaml
 prior:
   family: "niw"                    # required: "niw" | "ssvs" | "blasso" | "dl"
-  method: "minnesota"              # optional (NIW only): "default" | "minnesota"
+  method: "minnesota_legacy"       # optional (NIW only): "default" | "minnesota" | "minnesota_legacy" | "minnesota_canonical" | "minnesota_tempered"
 ```
 
 ### NIW defaults
@@ -161,12 +161,12 @@ prior:
   method: "default"
 ```
 
-### NIW Minnesota shrinkage
+### NIW legacy Minnesota-style shrinkage
 
 ```yaml
 prior:
   family: "niw"
-  method: "minnesota"
+  method: "minnesota_legacy"
   minnesota:
     lambda1: 0.1                   # optional
     lambda2: 0.5                   # optional
@@ -176,6 +176,54 @@ prior:
     own_lag_means: [1, 1, 1]       # optional (length N; overrides own_lag_mean)
     min_sigma2: 1.0e-6             # optional (floor for residual variance estimates)
 ```
+
+Notes:
+- `method: "minnesota"` remains supported as a backward-compatible alias for `method: "minnesota_legacy"`.
+- `method: "minnesota_legacy"` is the compatibility path and remains the default NIW shrinkage option.
+
+### NIW canonical Minnesota shrinkage
+
+```yaml
+prior:
+  family: "niw"
+  method: "minnesota_canonical"
+  minnesota:
+    lambda1: 0.1
+    lambda2: 0.5
+    lambda3: 1.0
+    lambda4: 100.0
+    own_lag_mean: 1.0
+    own_lag_means: [1, 1, 1]
+    min_sigma2: 1.0e-6
+```
+
+Notes:
+- `method: "minnesota_canonical"` uses equation-specific own-vs-cross shrinkage.
+- It currently supports homoskedastic models and diagonal stochastic volatility only.
+- Triangular SV and factor SV must continue to use the legacy NIW path.
+
+### NIW tempered Minnesota bridge
+
+```yaml
+prior:
+  family: "niw"
+  method: "minnesota_tempered"
+  minnesota:
+    lambda1: 0.1
+    lambda2: 0.5
+    lambda3: 1.0
+    lambda4: 100.0
+    tempered_alpha: 0.25
+    own_lag_mean: 1.0
+    own_lag_means: [1, 1, 1]
+    min_sigma2: 1.0e-6
+```
+
+Notes:
+- `method: "minnesota_tempered"` is an explicit experimental bridge between the legacy and canonical variance maps.
+- `minnesota.tempered_alpha` must be in `[0, 1]`; `0` reproduces the legacy coefficient variances and `1` reproduces the canonical coefficient variances.
+- It currently supports diagonal stochastic volatility only.
+- It does not redefine the semantics of `method: "minnesota_canonical"`.
 
 ### SSVS (variable selection)
 
