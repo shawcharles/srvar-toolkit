@@ -185,9 +185,7 @@ def test_canonical_minnesota_constructor_preserves_equation_specific_variances()
     assert prior.minnesota_canonical is not None
     sigma2 = prior.minnesota_canonical.sigma2
     k = 1 + ds.N * 2
-    variances = (
-        1.0 / prior.minnesota_canonical.inv_v0_vec.reshape((k, ds.N), order="F")
-    )
+    variances = 1.0 / prior.minnesota_canonical.inv_v0_vec.reshape((k, ds.N), order="F")
 
     assert np.allclose(variances[0, :], (lambda1 * lambda4) ** 2 * sigma2)
     assert np.isclose(variances[1, 0], lambda1**2)

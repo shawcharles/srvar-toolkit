@@ -79,7 +79,9 @@ def run_from_config(
     if validate_only:
         if validate_backtest:
             bt = build_backtest_config(cfg, model=model)
-            build_evaluation_config(cfg, variables=list(ds.variables), horizons=list(bt["horizons"]))
+            build_evaluation_config(
+                cfg, variables=list(ds.variables), horizons=list(bt["horizons"])
+            )
             _validate_backtest_prior_at_first_origin(cfg, dataset=ds, model=model, bt=bt)
         emit("validate_end", {"elapsed_s": time.perf_counter() - t0_total})
         return None

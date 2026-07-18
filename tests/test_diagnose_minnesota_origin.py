@@ -8,7 +8,9 @@ import pytest
 from srvar.compare import run_minnesota_origin_diagnostic
 
 
-def _write_origin_diagnostic_config(tmp_path, *, covariance: str | None = "diagonal") -> tuple[str, str]:
+def _write_origin_diagnostic_config(
+    tmp_path, *, covariance: str | None = "diagonal"
+) -> tuple[str, str]:
     rng = np.random.default_rng(123)
     t = 40
     beta = np.array(
@@ -160,7 +162,9 @@ def test_minnesota_origin_diagnostic_allows_canonical_homoskedastic_model(tmp_pa
 
 
 @pytest.mark.parametrize("covariance", ["triangular", "factor"])
-def test_minnesota_origin_diagnostic_rejects_canonical_ineligible_sv(tmp_path, covariance: str) -> None:
+def test_minnesota_origin_diagnostic_rejects_canonical_ineligible_sv(
+    tmp_path, covariance: str
+) -> None:
     config_path, origin_date = _write_origin_diagnostic_config(tmp_path, covariance=covariance)
 
     with pytest.raises(ValueError, match="minnesota_canonical currently supports only"):
@@ -204,7 +208,9 @@ def test_minnesota_origin_diagnostic_zero_origin_window_remains_value_error(tmp_
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="backtest.origin_start/end implies zero feasible forecast origins"):
+    with pytest.raises(
+        ValueError, match="backtest.origin_start/end implies zero feasible forecast origins"
+    ):
         run_minnesota_origin_diagnostic(
             config_path,
             out_root=tmp_path / "zero_origin_window",

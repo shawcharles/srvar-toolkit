@@ -59,4 +59,3 @@ def test_factor_sv_fit_forecast_runs_and_identification_holds() -> None:
     fc = forecast(fit_res, horizons=[1, 2], draws=20, rng=np.random.default_rng(789))
     assert fc.draws.shape == (20, 2, ds.N)
     assert np.all(np.isfinite(fc.draws))
-

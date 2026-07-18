@@ -121,4 +121,3 @@ def test_factor_sv_with_steady_state_and_elb_returns_latent_series() -> None:
     fc = forecast(fit_res, horizons=[1, 2], draws=30, rng=np.random.default_rng(987))
     assert fc.latent_draws is not None
     assert np.all(fc.draws[..., r_idx] >= bound - 1e-12)
-

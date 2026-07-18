@@ -61,4 +61,3 @@ def test_factor_sv_with_elb_fit_forecast_runs_and_returns_latent_series() -> Non
     assert fc.draws.shape == (50, 2, ds.N)
     assert fc.latent_draws.shape == (50, 2, ds.N)
     assert np.all(fc.draws[..., r_idx] >= bound - 1e-12)
-

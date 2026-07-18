@@ -19,7 +19,11 @@ def select_forecast_draws(
     When ``use_latent`` is true and latent draws are available, those are returned.
     Otherwise the observed predictive draws are used.
     """
-    sims = forecast.latent_draws if (use_latent and forecast.latent_draws is not None) else forecast.draws
+    sims = (
+        forecast.latent_draws
+        if (use_latent and forecast.latent_draws is not None)
+        else forecast.draws
+    )
     arr = np.asarray(sims, dtype=float)
     if arr.ndim != 3:
         raise ValueError("forecast draws must have shape (D, H, N)")

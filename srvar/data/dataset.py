@@ -92,7 +92,9 @@ class Dataset:
         if len(self.variables) != x.shape[1]:
             raise ValueError("len(variables) must equal values.shape[1]")
 
-        idx = self.time_index if isinstance(self.time_index, pd.Index) else pd.Index(self.time_index)
+        idx = (
+            self.time_index if isinstance(self.time_index, pd.Index) else pd.Index(self.time_index)
+        )
         if len(idx) != x.shape[0]:
             raise ValueError("len(time_index) must equal values.shape[0]")
 

@@ -32,7 +32,9 @@ def build_variable_summary_frame(metrics_comparison_csv: str | Path) -> pd.DataF
             raise ValueError(f"metrics comparison is missing required column: {col}")
 
     accuracy_cols = ["crps_diff", "rmse_diff", "mae_diff"]
-    coverage_cols = [c for c in ("coverage_50_diff", "coverage_80_diff", "coverage_90_diff") if c in grouped]
+    coverage_cols = [
+        c for c in ("coverage_50_diff", "coverage_80_diff", "coverage_90_diff") if c in grouped
+    ]
     grouped["accuracy_improvement_count"] = (grouped.loc[:, accuracy_cols] < 0.0).sum(axis=1)
     grouped["coverage_improvement_count"] = (grouped.loc[:, coverage_cols] > 0.0).sum(axis=1)
 
@@ -73,7 +75,9 @@ def main() -> None:
         else comparison_csv.with_name("variable_summary.csv")
     )
     out_md = (
-        Path(args.out_md) if args.out_md is not None else comparison_csv.with_name("variable_summary.md")
+        Path(args.out_md)
+        if args.out_md is not None
+        else comparison_csv.with_name("variable_summary.md")
     )
 
     df = build_variable_summary_frame(comparison_csv)

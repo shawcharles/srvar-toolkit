@@ -237,9 +237,7 @@ def _fit_fsv(
             v0=niw.v0,
             k_no_intercept=x.shape[1],
         )
-        mn, _vn, _sn, _nun = posterior_niw(
-            x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
-        )
+        mn, _vn, _sn, _nun = posterior_niw(x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0)
         beta_lags = mn.copy()
 
         # Initialize volatility states (idiosyncratic and factor) on demeaned residuals.
@@ -287,9 +285,7 @@ def _fit_fsv(
                     raise RuntimeError("robust shocks enabled but precision state is missing")
                 h_eta_adj = h_eta - np.log(prec).reshape(-1, 1)
 
-            beta_lags = sample_beta_svrw(
-                x=x, y=y_tilde, m0=m0_ssp, v0=v0_ssp, h=h_eta_adj, rng=rng
-            )
+            beta_lags = sample_beta_svrw(x=x, y=y_tilde, m0=m0_ssp, v0=v0_ssp, h=h_eta_adj, rng=rng)
 
             # Step A2: sample mu given beta_lags, factor_mean, and diagonal idiosyncratic likelihood.
             factor_mean = f @ lam.T  # (T_eff, N)
@@ -531,7 +527,9 @@ def _fit_fsv(
     h0_f_keep: list[np.ndarray] = []
     sigma_eta2_f_keep: list[np.ndarray] = []
     f_keep: list[np.ndarray] | None = [] if vol.store_factor_draws else None
-    y_lat_keep: list[np.ndarray] | None = [] if (model.elb is not None and model.elb.enabled) else None
+    y_lat_keep: list[np.ndarray] | None = (
+        [] if (model.elb is not None and model.elb.enabled) else None
+    )
 
     for it in range(sampler.draws):
         # Step A: sample beta given (f, lam, h_eta[, prec])

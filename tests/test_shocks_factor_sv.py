@@ -48,4 +48,3 @@ def test_update_precision_scales_factor_sv_returns_positive_values() -> None:
     assert lam.shape == (t,)
     assert np.all(np.isfinite(lam))
     assert np.all(lam > 0)
-

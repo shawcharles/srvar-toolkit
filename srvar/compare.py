@@ -128,9 +128,7 @@ def _regressor_names(*, variables: list[str], p: int, include_intercept: bool) -
     return names
 
 
-def _resolve_backtest_origins(
-    ds_full: Dataset, bt: dict[str, Any]
-) -> tuple[list[int], int, int]:
+def _resolve_backtest_origins(ds_full: Dataset, bt: dict[str, Any]) -> tuple[list[int], int, int]:
     horizons = list(bt["horizons"])
     max_h = int(max(horizons))
     if ds_full.T <= max_h:
@@ -145,9 +143,7 @@ def _resolve_backtest_origins(
     origin_end = bt.get("origin_end")
     if origin_start is not None or origin_end is not None:
         if not isinstance(ds_full.time_index, pd.DatetimeIndex):
-            raise ValueError(
-                "backtest.origin_start/end requires a datetime index on the dataset"
-            )
+            raise ValueError("backtest.origin_start/end requires a datetime index on the dataset")
 
         if origin_start is not None:
             ts = pd.to_datetime(origin_start)
@@ -442,7 +438,10 @@ def build_fit_coefficient_detail(
 
     if fit_b.dataset.variables != fit_c.dataset.variables:
         raise ValueError("fit result variable lists do not match")
-    if fit_b.model.p != fit_c.model.p or fit_b.model.include_intercept != fit_c.model.include_intercept:
+    if (
+        fit_b.model.p != fit_c.model.p
+        or fit_b.model.include_intercept != fit_c.model.include_intercept
+    ):
         raise ValueError("fit result model structures do not match")
     if fit_b.beta_draws is None or fit_c.beta_draws is None:
         raise ValueError("both fit results must contain beta_draws")
@@ -481,9 +480,11 @@ def build_fit_coefficient_detail(
 
     if not rows:
         raise ValueError("no coefficient draw rows produced")
-    return pd.DataFrame(rows).sort_values(
-        ["variable", "regressor", "method", "draw"]
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["variable", "regressor", "method", "draw"])
+        .reset_index(drop=True)
+    )
 
 
 def summarize_fit_coefficient_detail(df: pd.DataFrame) -> pd.DataFrame:
@@ -624,7 +625,10 @@ def run_minnesota_prior_scale_diagnostic(
         if prior_c.minnesota_canonical is not None
         else np.diag(np.asarray(prior_c.niw.s0, dtype=float))
     )
-    sigma2_map = {variable: float(value) for variable, value in zip(train_ds.variables, sigma2_source, strict=True)}
+    sigma2_map = {
+        variable: float(value)
+        for variable, value in zip(train_ds.variables, sigma2_source, strict=True)
+    }
     reg_to_idx = {
         regressor: idx
         for idx, regressor in enumerate(
@@ -685,7 +689,9 @@ def run_minnesota_prior_scale_diagnostic(
                     "log_variance_ratio": float(np.log(candidate_variance / baseline_variance)),
                     "baseline_precision": float(1.0 / baseline_variance),
                     "candidate_precision": float(1.0 / candidate_variance),
-                    "precision_ratio": float((1.0 / candidate_variance) / (1.0 / baseline_variance)),
+                    "precision_ratio": float(
+                        (1.0 / candidate_variance) / (1.0 / baseline_variance)
+                    ),
                     "theoretical_variance_ratio": theoretical_ratio,
                     "ratio_minus_theoretical": float(
                         (candidate_variance / baseline_variance) - theoretical_ratio
@@ -765,9 +771,7 @@ def _forecast_frame(
     return pd.DataFrame(rows).sort_values(["variable", "horizon"]).reset_index(drop=True)
 
 
-def _prefix_frame(
-    df: pd.DataFrame, *, prefix: str, key_cols: Iterable[str]
-) -> pd.DataFrame:
+def _prefix_frame(df: pd.DataFrame, *, prefix: str, key_cols: Iterable[str]) -> pd.DataFrame:
     keys = set(key_cols)
     rename = {col: f"{prefix}{col}" for col in df.columns if col not in keys}
     return df.rename(columns=rename)
@@ -1212,9 +1216,7 @@ def run_minnesota_origin_diagnostic(
 
     state_b = _state_frame(fit_b, variables=selected_variables)
     state_c = _state_frame(fit_c, variables=selected_variables)
-    state_comparison = _prefix_frame(
-        state_b, prefix="baseline_", key_cols=["variable"]
-    ).merge(
+    state_comparison = _prefix_frame(state_b, prefix="baseline_", key_cols=["variable"]).merge(
         _prefix_frame(state_c, prefix="candidate_", key_cols=["variable"]),
         on=["variable"],
         how="inner",
@@ -1272,12 +1274,10 @@ def run_minnesota_origin_diagnostic(
         - forecast_comparison["baseline_forecast_mean"]
     )
     forecast_comparison["forecast_std_diff"] = (
-        forecast_comparison["candidate_forecast_std"]
-        - forecast_comparison["baseline_forecast_std"]
+        forecast_comparison["candidate_forecast_std"] - forecast_comparison["baseline_forecast_std"]
     )
     forecast_comparison["abs_error_diff"] = (
-        forecast_comparison["candidate_abs_error"]
-        - forecast_comparison["baseline_abs_error"]
+        forecast_comparison["candidate_abs_error"] - forecast_comparison["baseline_abs_error"]
     )
 
     state_csv = root / "state_comparison.csv"
@@ -1437,7 +1437,11 @@ def run_tempered_minnesota_origin_experiment(
         forecast_comparison[f"{method_name}_abs_error"] = np.abs(
             forecast_comparison[f"{method_name}_error"]
         )
-    for left, right in (("baseline", "canonical"), ("baseline", "tempered"), ("canonical", "tempered")):
+    for left, right in (
+        ("baseline", "canonical"),
+        ("baseline", "tempered"),
+        ("canonical", "tempered"),
+    ):
         forecast_comparison = _add_method_diff_columns(forecast_comparison, left=left, right=right)
 
     state_frames = {
@@ -1446,7 +1450,11 @@ def run_tempered_minnesota_origin_experiment(
         "tempered": _state_frame(fit_t, variables=selected_variables),
     }
     state_comparison = _merge_method_frames(state_frames, key_cols=["variable"])
-    for left, right in (("baseline", "canonical"), ("baseline", "tempered"), ("canonical", "tempered")):
+    for left, right in (
+        ("baseline", "canonical"),
+        ("baseline", "tempered"),
+        ("canonical", "tempered"),
+    ):
         state_comparison = _add_method_diff_columns(state_comparison, left=left, right=right)
 
     beta_frames = {
@@ -1455,7 +1463,11 @@ def run_tempered_minnesota_origin_experiment(
         "tempered": _beta_frame(fit_t, variables=selected_variables),
     }
     beta_comparison = _merge_method_frames(beta_frames, key_cols=["variable", "regressor"])
-    for left, right in (("baseline", "canonical"), ("baseline", "tempered"), ("canonical", "tempered")):
+    for left, right in (
+        ("baseline", "canonical"),
+        ("baseline", "tempered"),
+        ("canonical", "tempered"),
+    ):
         beta_comparison = _add_method_diff_columns(beta_comparison, left=left, right=right)
 
     forecast_csv = root / "forecast_comparison.csv"

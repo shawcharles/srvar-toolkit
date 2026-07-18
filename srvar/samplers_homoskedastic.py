@@ -57,9 +57,7 @@ def _fit_no_elb(
         dl_vartheta: np.ndarray | None = None
         dl_zeta: float | None = None
         dl_inv_v0: np.ndarray | None = None
-        canonical = (
-            prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
-        )
+        canonical = prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
 
         beta_keep: list[np.ndarray] = []
         sigma_keep: list[np.ndarray] = []
@@ -747,9 +745,7 @@ def _fit_elb_gibbs(
         dl_vartheta: np.ndarray | None = None
         dl_zeta: float | None = None
         dl_inv_v0: np.ndarray | None = None
-        canonical = (
-            prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
-        )
+        canonical = prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
 
         last_posterior: PosteriorNIW | None = None
 

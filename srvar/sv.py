@@ -113,7 +113,9 @@ class VolatilitySpec:
         ):
             raise ValueError("q_prior_var must be positive and finite when covariance='triangular'")
         if self.covariance == "factor":
-            if not isinstance(self.k_factors, (int, np.integer)) or isinstance(self.k_factors, bool):
+            if not isinstance(self.k_factors, (int, np.integer)) or isinstance(
+                self.k_factors, bool
+            ):
                 raise ValueError("k_factors must be an integer when covariance='factor'")
             if int(self.k_factors) < 1:
                 raise ValueError("k_factors must be >= 1 when covariance='factor'")

@@ -261,7 +261,9 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
                 )
 
             if covariance_l == "factor" and dynamics_l != "rw":
-                raise ConfigError("model.volatility.covariance='factor' currently supports only dynamics='rw'")
+                raise ConfigError(
+                    "model.volatility.covariance='factor' currently supports only dynamics='rw'"
+                )
 
             q_prior_var_raw = _get(vol_cfg, "q_prior_var", default=1.0)
             q_prior_var = _as_float(q_prior_var_raw, key="model.volatility.q_prior_var")
@@ -867,9 +869,7 @@ def _resolve_backtest_origin_plan(dataset: Dataset, bt: dict[str, Any]) -> _Back
     )
 
 
-def _backtest_training_bounds(
-    *, mode: str, window: int | None, origin_end: int
-) -> tuple[int, int]:
+def _backtest_training_bounds(*, mode: str, window: int | None, origin_end: int) -> tuple[int, int]:
     """Return the half-open training slice for one scheduled origin."""
     if mode == "expanding":
         train_start = 0

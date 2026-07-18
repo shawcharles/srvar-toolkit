@@ -49,7 +49,9 @@ def test_normal_run_remains_strict_for_full_dataset_missing_values(tmp_path: Pat
         run_from_config(config_path)
 
 
-def test_validate_only_checks_first_origin_prior_without_fitting(monkeypatch, tmp_path: Path) -> None:
+def test_validate_only_checks_first_origin_prior_without_fitting(
+    monkeypatch, tmp_path: Path
+) -> None:
     import srvar.runner as runner
 
     config_path = _write_backtest_config(tmp_path, prior_method="not-a-prior")

@@ -59,7 +59,9 @@ sampler:
 
     fit = FitResult(
         dataset=ds,
-        model=ModelSpec(p=p, include_intercept=True, volatility=VolatilitySpec(covariance="factor")),
+        model=ModelSpec(
+            p=p, include_intercept=True, volatility=VolatilitySpec(covariance="factor")
+        ),
         prior=PriorSpec.niw_default(k=k, n=n),
         sampler=SamplerConfig(draws=1, burn_in=0, thin=1),
         posterior=posterior,

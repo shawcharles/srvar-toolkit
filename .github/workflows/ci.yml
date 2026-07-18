@@ -32,6 +32,8 @@ jobs:
           python -m pip install -e ".[dev,cli,fred,docs,plot,excel]"
       - name: Lint
         run: ruff check srvar tests scripts
+      - name: Format
+        run: ruff format --check srvar tests scripts
       - name: Test
         run: pytest
 

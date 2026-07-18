@@ -12,7 +12,7 @@ from srvar.xarray import (
     forecast_to_xarray,
     historical_decomposition_to_xarray,
     irf_to_xarray,
- )
+)
 
 
 def test_xarray_converters_import_or_convert() -> None:
@@ -69,7 +69,9 @@ def test_fit_to_xarray_aligns_sv_states_to_full_time_index() -> None:
     n = 2
     time = pd.date_range("2000-01-01", periods=t, freq="MS")
 
-    ds = Dataset.from_arrays(values=np.zeros((t, n), dtype=float), variables=["y1", "y2"], time_index=time)
+    ds = Dataset.from_arrays(
+        values=np.zeros((t, n), dtype=float), variables=["y1", "y2"], time_index=time
+    )
     model = ModelSpec(p=p, include_intercept=True)
     prior = PriorSpec.niw_default(k=1 + n * p, n=n)
     sampler = SamplerConfig(draws=1, burn_in=0, thin=1)
@@ -107,7 +109,9 @@ def test_fit_to_xarray_includes_factor_sv_draws_when_present() -> None:
     draws = 2
     time = pd.date_range("2000-01-01", periods=t, freq="MS")
 
-    ds = Dataset.from_arrays(values=np.zeros((t, n), dtype=float), variables=["a", "b", "c"], time_index=time)
+    ds = Dataset.from_arrays(
+        values=np.zeros((t, n), dtype=float), variables=["a", "b", "c"], time_index=time
+    )
     model = ModelSpec(p=p, include_intercept=True)
     prior = PriorSpec.niw_default(k=1 + n * p, n=n)
     sampler = SamplerConfig(draws=draws, burn_in=0, thin=1)

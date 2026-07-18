@@ -100,8 +100,16 @@ def test_run_minnesota_prior_scale_diagnostic_matches_closed_form_ratios(tmp_pat
     cross_row = summary.loc[summary["regressor"] == "y2_lag1"].iloc[0]
 
     assert abs(float(const_row["variance_ratio"]) - float(const_row["sigma2_equation"])) < 1e-12
-    assert abs(float(const_row["variance_ratio"]) - float(const_row["theoretical_variance_ratio"])) < 1e-12
+    assert (
+        abs(float(const_row["variance_ratio"]) - float(const_row["theoretical_variance_ratio"]))
+        < 1e-12
+    )
     assert bool(own_row["is_own_lag"])
-    assert abs(float(own_row["variance_ratio"]) - float(own_row["theoretical_variance_ratio"])) < 1e-12
+    assert (
+        abs(float(own_row["variance_ratio"]) - float(own_row["theoretical_variance_ratio"])) < 1e-12
+    )
     assert not bool(cross_row["is_own_lag"])
-    assert abs(float(cross_row["variance_ratio"]) - float(cross_row["theoretical_variance_ratio"])) < 1e-12
+    assert (
+        abs(float(cross_row["variance_ratio"]) - float(cross_row["theoretical_variance_ratio"]))
+        < 1e-12
+    )

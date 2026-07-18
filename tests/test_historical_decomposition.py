@@ -158,9 +158,7 @@ def test_historical_decomposition_cholesky_supports_factor_sv() -> None:
     y[0] = np.array([1.0, -1.0], dtype=float)
     z = rng.standard_normal((t_eff, n))
     for tt in range(t_eff):
-        sigma_t = (
-            lam @ np.diag(np.exp([h_f[tt]])) @ lam.T + np.diag(np.exp(h_eta[tt, :]))
-        )
+        sigma_t = lam @ np.diag(np.exp([h_f[tt]])) @ lam.T + np.diag(np.exp(h_eta[tt, :]))
         l_t = np.linalg.cholesky(sigma_t)
         eps_t = l_t @ z[tt]
         y[tt + 1] = a @ y[tt] + eps_t

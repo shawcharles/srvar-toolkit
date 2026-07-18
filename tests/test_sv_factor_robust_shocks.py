@@ -137,4 +137,3 @@ def test_factor_sv_with_student_t_shocks_and_steady_state_runs() -> None:
 
     fc = forecast(fit_res, horizons=[1, 2], draws=20, rng=np.random.default_rng(42))
     assert np.all(np.isfinite(fc.draws))
-

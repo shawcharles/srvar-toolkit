@@ -78,7 +78,9 @@ def _fit_svrw(
 
         niw = prior.niw
         prior_family = prior.family.lower()
-        prior_mode = "minnesota_canonical" if prior.minnesota_canonical is not None else prior_family
+        prior_mode = (
+            "minnesota_canonical" if prior.minnesota_canonical is not None else prior_family
+        )
 
         blasso = prior.blasso if prior_mode == "blasso" else None
         if prior_mode == "blasso" and blasso is None:

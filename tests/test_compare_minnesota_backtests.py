@@ -110,7 +110,9 @@ def test_run_minnesota_backtest_comparison_writes_bundle(tmp_path) -> None:
     assert "save_forecasts: true" in candidate_cfg
 
     baseline_forecasts = sorted(result.baseline_out_dir.joinpath("forecasts").glob("origin_*.npz"))
-    candidate_forecasts = sorted(result.candidate_out_dir.joinpath("forecasts").glob("origin_*.npz"))
+    candidate_forecasts = sorted(
+        result.candidate_out_dir.joinpath("forecasts").glob("origin_*.npz")
+    )
     assert len(baseline_forecasts) == 2
     assert len(candidate_forecasts) == 2
 

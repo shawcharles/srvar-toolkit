@@ -348,7 +348,9 @@ def compute_metrics_rows(
                 else float(np.sqrt(np.sum((errors[err_mask]) ** 2) / float(n_err)))
             )
             row["mae"] = (
-                float("nan") if n_err < 1 else float(np.sum(np.abs(errors[err_mask])) / float(n_err))
+                float("nan")
+                if n_err < 1
+                else float(np.sum(np.abs(errors[err_mask])) / float(n_err))
             )
 
             if crps_enabled:

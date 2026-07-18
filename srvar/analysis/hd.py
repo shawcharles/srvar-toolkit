@@ -332,9 +332,8 @@ def historical_decomposition_cholesky(
                 eps = np.empty_like(resid, dtype=float)
                 impacts = np.empty((t_eff, n, n), dtype=float)
                 for tt in range(t_eff):
-                    sigma_t = (
-                        lam_perm @ np.diag(np.exp(hf_eff[tt, :])) @ lam_perm.T
-                        + np.diag(np.exp(h_eta_perm[tt, :]))
+                    sigma_t = lam_perm @ np.diag(np.exp(hf_eff[tt, :])) @ lam_perm.T + np.diag(
+                        np.exp(h_eta_perm[tt, :])
                     )
                     sigma_t = 0.5 * (sigma_t + sigma_t.T)
                     l_t = cholesky_jitter(sigma_t)

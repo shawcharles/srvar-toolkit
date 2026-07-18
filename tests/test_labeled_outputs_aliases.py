@@ -50,4 +50,3 @@ def test_arviz_fit_excludes_alias_variables() -> None:
     idata = fit_to_inferencedata(fit)
     assert "lambda" in idata.posterior.data_vars
     assert "loadings" not in idata.posterior.data_vars
-
