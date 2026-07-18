@@ -42,6 +42,12 @@ mypy srvar/
 sphinx-build -b html docs docs/_build/html
 ```
 
+### Prepare a release
+
+Release preparation is documented in [Releasing srvar-toolkit](docs/getting-started/releasing.md).
+It covers the local metadata preflight, build-only tag workflow, protected trusted publishing, and
+the external PyPI/GitHub administrator setup that repository files cannot perform.
+
 ## Pull requests
 
 Please ensure:

@@ -31,6 +31,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2",
   "pytest>=8",
   "pytest-cov>=5",
   "hypothesis>=6.100",
@@ -38,6 +39,7 @@ dev = [
   "black>=24",
   "mypy>=1.11",
   "pre-commit>=3.7",
+  "twine>=5.1",
   "openpyxl>=3.1",
 ]
 

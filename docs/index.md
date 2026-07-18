@@ -90,6 +90,7 @@ Complete function and class documentation with type signatures and examples.
 getting-started/installation
 getting-started/quickstart
 getting-started/development
+getting-started/releasing
 ```
 
 ```{toctree}
