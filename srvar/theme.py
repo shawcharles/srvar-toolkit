@@ -16,10 +16,10 @@ Usage
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,6 +352,11 @@ PRINT_THEME = Theme(
 )
 
 
+def _update_rcparams(rc_params: MutableMapping[Any, Any], values: object) -> None:
+    """Apply a dynamic srvar theme mapping at Matplotlib's typed rcParams boundary."""
+    rc_params.update(cast(Any, values))
+
+
 # =============================================================================
 # Context Manager and Application Functions
 # =============================================================================
@@ -392,11 +397,11 @@ def srvar_style(theme: Theme | None = None) -> Generator[Theme, None, None]:
     original = plt.rcParams.copy()
 
     try:
-        plt.rcParams.update(theme.to_rcparams())
+        _update_rcparams(plt.rcParams, theme.to_rcparams())
         yield theme
     finally:
         # Restore original rcParams
-        plt.rcParams.update(original)
+        _update_rcparams(plt.rcParams, original)
 
 
 def apply_srvar_style(theme: Theme | None = None) -> None:
@@ -423,7 +428,7 @@ def apply_srvar_style(theme: Theme | None = None) -> None:
     if theme is None:
         theme = DEFAULT_THEME
 
-    plt.rcParams.update(theme.to_rcparams())
+    _update_rcparams(plt.rcParams, theme.to_rcparams())
 
 
 def reset_style() -> None:

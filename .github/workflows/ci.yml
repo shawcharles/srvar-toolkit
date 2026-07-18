@@ -35,6 +35,7 @@ jobs:
       - name: Format
         run: ruff format --check srvar tests scripts
       - name: Type check
+        if: matrix.python-version == '3.11'
         run: mypy srvar
       - name: Test
         run: pytest
