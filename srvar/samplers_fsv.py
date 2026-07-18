@@ -518,16 +518,16 @@ def _fit_fsv(
 
     prec = np.ones(t_eff, dtype=float) if robust else None
 
-    beta_keep: list[np.ndarray] = []
-    lam_keep: list[np.ndarray] = []
-    h_eta_keep: list[np.ndarray] = []
-    h0_eta_keep: list[np.ndarray] = []
-    sigma_eta2_eta_keep: list[np.ndarray] = []
-    h_f_keep: list[np.ndarray] = []
-    h0_f_keep: list[np.ndarray] = []
-    sigma_eta2_f_keep: list[np.ndarray] = []
-    f_keep: list[np.ndarray] | None = [] if vol.store_factor_draws else None
-    y_lat_keep: list[np.ndarray] | None = (
+    fsv_beta_keep: list[np.ndarray] = []
+    fsv_lam_keep: list[np.ndarray] = []
+    fsv_h_eta_keep: list[np.ndarray] = []
+    fsv_h0_eta_keep: list[np.ndarray] = []
+    fsv_sigma_eta2_eta_keep: list[np.ndarray] = []
+    fsv_h_f_keep: list[np.ndarray] = []
+    fsv_h0_f_keep: list[np.ndarray] = []
+    fsv_sigma_eta2_f_keep: list[np.ndarray] = []
+    fsv_f_keep: list[np.ndarray] | None = [] if vol.store_factor_draws else None
+    fsv_y_lat_keep: list[np.ndarray] | None = (
         [] if (model.elb is not None and model.elb.enabled) else None
     )
 
@@ -660,18 +660,18 @@ def _fit_fsv(
             )
 
         if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-            beta_keep.append(beta.copy())
-            lam_keep.append(lam.copy())
-            h_eta_keep.append(h_eta.copy())
-            h0_eta_keep.append(h0_eta.copy())
-            sigma_eta2_eta_keep.append(sigma_eta2_eta.copy())
-            h_f_keep.append(h_f.copy())
-            h0_f_keep.append(h0_f.copy())
-            sigma_eta2_f_keep.append(sigma_eta2_f.copy())
-            if f_keep is not None:
-                f_keep.append(f.copy())
-            if y_lat_keep is not None:
-                y_lat_keep.append(y_lat.copy())
+            fsv_beta_keep.append(beta.copy())
+            fsv_lam_keep.append(lam.copy())
+            fsv_h_eta_keep.append(h_eta.copy())
+            fsv_h0_eta_keep.append(h0_eta.copy())
+            fsv_sigma_eta2_eta_keep.append(sigma_eta2_eta.copy())
+            fsv_h_f_keep.append(h_f.copy())
+            fsv_h0_f_keep.append(h0_f.copy())
+            fsv_sigma_eta2_f_keep.append(sigma_eta2_f.copy())
+            if fsv_f_keep is not None:
+                fsv_f_keep.append(f.copy())
+            if fsv_y_lat_keep is not None:
+                fsv_y_lat_keep.append(y_lat.copy())
 
     latent_dataset = None
     if model.elb is not None and model.elb.enabled:
@@ -686,16 +686,16 @@ def _fit_fsv(
         sampler=sampler,
         posterior=None,
         latent_dataset=latent_dataset,
-        latent_draws=np.stack(y_lat_keep) if y_lat_keep else None,
-        beta_draws=np.stack(beta_keep) if beta_keep else None,
+        latent_draws=np.stack(fsv_y_lat_keep) if fsv_y_lat_keep else None,
+        beta_draws=np.stack(fsv_beta_keep) if fsv_beta_keep else None,
         sigma_draws=None,
         q_draws=None,
-        h_draws=np.stack(h_eta_keep) if h_eta_keep else None,
-        h0_draws=np.stack(h0_eta_keep) if h0_eta_keep else None,
-        sigma_eta2_draws=np.stack(sigma_eta2_eta_keep) if sigma_eta2_eta_keep else None,
-        lambda_draws=np.stack(lam_keep) if lam_keep else None,
-        factor_draws=np.stack(f_keep) if f_keep else None,
-        h_factor_draws=np.stack(h_f_keep) if h_f_keep else None,
-        h0_factor_draws=np.stack(h0_f_keep) if h0_f_keep else None,
-        sigma_eta2_factor_draws=np.stack(sigma_eta2_f_keep) if sigma_eta2_f_keep else None,
+        h_draws=np.stack(fsv_h_eta_keep) if fsv_h_eta_keep else None,
+        h0_draws=np.stack(fsv_h0_eta_keep) if fsv_h0_eta_keep else None,
+        sigma_eta2_draws=np.stack(fsv_sigma_eta2_eta_keep) if fsv_sigma_eta2_eta_keep else None,
+        lambda_draws=np.stack(fsv_lam_keep) if fsv_lam_keep else None,
+        factor_draws=np.stack(fsv_f_keep) if fsv_f_keep else None,
+        h_factor_draws=np.stack(fsv_h_f_keep) if fsv_h_f_keep else None,
+        h0_factor_draws=np.stack(fsv_h0_f_keep) if fsv_h0_f_keep else None,
+        sigma_eta2_factor_draws=np.stack(fsv_sigma_eta2_f_keep) if fsv_sigma_eta2_f_keep else None,
     )

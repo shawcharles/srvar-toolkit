@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -189,7 +189,7 @@ def get_many(
     frequency: str | None = None,
     aggregation_method: str | None = None,
     units: str | None = None,
-    join: str = "inner",
+    join: Literal["inner", "outer"] = "inner",
     cache_dir: str | Path | None = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:

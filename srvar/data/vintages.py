@@ -32,7 +32,8 @@ def _parse_observation_index(observation: pd.Series) -> pd.PeriodIndex:
     obs = observation.astype(str).map(_normalize_quarter_label)
     years = obs.str.slice(0, 4)
     qs = obs.str.slice(-1)
-    return pd.PeriodIndex.from_fields(year=years.astype(int), quarter=qs.astype(int), freq="Q")
+    labels = years + "Q" + qs
+    return pd.PeriodIndex(labels, freq="Q")
 
 
 def load_vintage_sheet(*, file_path: str | Path, sheet_name: str) -> tuple[pd.Period, pd.DataFrame]:
@@ -72,8 +73,10 @@ def load_vintages_from_workbook(*, file_path: str | Path) -> dict[pd.Period, pd.
         )
         sheets = pd.ExcelFile(fp, engine="openpyxl").sheet_names
     out: dict[pd.Period, pd.DataFrame] = {}
-    for s in sheets:
-        vintage, df = load_vintage_sheet(file_path=fp, sheet_name=s)
+    for sheet_name in sheets:
+        if not isinstance(sheet_name, str):
+            raise ValueError(f"workbook sheet name must be a string, got {sheet_name!r}")
+        vintage, df = load_vintage_sheet(file_path=fp, sheet_name=sheet_name)
         if vintage in out:
             raise ValueError(f"duplicate vintage {vintage} in workbook {fp}")
         out[vintage] = df
@@ -109,7 +112,7 @@ def dataset_from_vintage(
 
     df = vintage_df.loc[:, variables]
     if vintage is not None:
-        df = df.loc[:vintage]
+        df = df.loc[df.index <= vintage]
 
     return Dataset.from_arrays(
         values=df.to_numpy(dtype=float), variables=variables, time_index=df.index

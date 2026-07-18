@@ -93,3 +93,36 @@ def test_ssp_elb_and_sv_paths_store_mu_draws() -> None:
     fit_res_sv = fit(ds, model_sv, prior, sampler, rng=np.random.default_rng(999))
     assert fit_res_sv.h_draws is not None
     assert fit_res_sv.mu_draws is not None
+
+
+def test_ssp_elb_ssvs_fit_forecast_preserves_latent_and_floor() -> None:
+    rng = np.random.default_rng(8)
+    bound = -0.05
+    y = rng.standard_normal((60, 2))
+    y[:, 0] = np.minimum(y[:, 0], bound)
+    ds = Dataset.from_arrays(values=y, variables=["r", "y"])
+
+    model = ModelSpec(
+        p=1,
+        include_intercept=True,
+        steady_state=SteadyStateSpec(mu0=np.zeros(ds.N), v0_mu=0.1),
+        elb=ElbSpec(bound=bound, applies_to=["r"]),
+    )
+    prior = PriorSpec.from_ssvs(k=1 + ds.N * model.p, n=ds.N, include_intercept=True)
+    sampler = SamplerConfig(draws=24, burn_in=4, thin=2)
+
+    fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(9))
+
+    assert fit_res.beta_draws is not None
+    assert fit_res.sigma_draws is not None
+    assert fit_res.gamma_draws is not None
+    assert fit_res.latent_dataset is not None
+    assert fit_res.latent_draws is not None
+    assert np.all(np.isfinite(fit_res.beta_draws))
+    assert np.all(np.isfinite(fit_res.sigma_draws))
+    masked = ds.values[:, 0] <= bound + 1e-12
+    assert np.all(fit_res.latent_dataset.values[masked, 0] <= bound + 1e-10)
+
+    fc = forecast(fit_res, horizons=[1, 2], draws=12, rng=np.random.default_rng(10))
+    assert np.all(np.isfinite(fc.draws))
+    assert np.all(fc.draws[..., 0] >= bound - 1e-12)

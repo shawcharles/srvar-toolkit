@@ -79,3 +79,25 @@ def test_fred_vintage_params_are_sent(tmp_path, monkeypatch) -> None:
     assert captured["params"] is not None
     assert captured["params"].get("realtime_start") == "2019-09-30"
     assert captured["params"].get("realtime_end") == "2019-09-30"
+
+
+def test_fred_get_many_supports_inner_and_outer_joins(monkeypatch) -> None:
+    from srvar.data import fred
+
+    first = pd.Series([1.0, 2.0], index=pd.to_datetime(["2020-01-01", "2020-02-01"]))
+    second = pd.Series([3.0, 4.0], index=pd.to_datetime(["2020-02-01", "2020-03-01"]))
+
+    def fake_get_series(series_id: str, **_kwargs):
+        return first if series_id == "FIRST" else second
+
+    monkeypatch.setattr(fred, "get_series", fake_get_series)
+
+    inner = fred.get_many({"a": "FIRST", "b": "SECOND"}, api_key="k", join="inner")
+    outer = fred.get_many({"a": "FIRST", "b": "SECOND"}, api_key="k", join="outer")
+
+    assert inner.index.tolist() == [pd.Timestamp("2020-02-01")]
+    assert outer.index.tolist() == [
+        pd.Timestamp("2020-01-01"),
+        pd.Timestamp("2020-02-01"),
+        pd.Timestamp("2020-03-01"),
+    ]

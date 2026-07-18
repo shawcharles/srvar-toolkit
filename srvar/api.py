@@ -276,7 +276,7 @@ def forecast(
 
     if fit.beta_draws is not None and fit.sigma_draws is not None:
         # sample with replacement from stored posterior draws
-        idx: np.ndarray
+        homoskedastic_idx: np.ndarray
         if stationarity_l == "reject":
             from .var import is_stationary
 
@@ -294,11 +294,11 @@ def forecast(
             if stable_idx.size < 1:
                 raise ValueError("no stationary coefficient draws available in fit.beta_draws")
             sel = rng.integers(0, stable_idx.size, size=draws)
-            idx = stable_idx[sel]
+            homoskedastic_idx = stable_idx[sel]
         else:
-            idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
-        beta_draws = fit.beta_draws[idx]
-        sigma_draws = fit.sigma_draws[idx]
+            homoskedastic_idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
+        beta_draws = fit.beta_draws[homoskedastic_idx]
+        sigma_draws = fit.sigma_draws[homoskedastic_idx]
 
         sims = np.empty((draws, hmax, fit.dataset.N), dtype=float)
         for d in range(draws):
@@ -319,7 +319,7 @@ def forecast(
     ):
         import scipy.linalg
 
-        idx: np.ndarray
+        triangular_sv_idx: np.ndarray
         if stationarity_l == "reject":
             from .var import is_stationary
 
@@ -337,15 +337,17 @@ def forecast(
             if stable_idx.size < 1:
                 raise ValueError("no stationary coefficient draws available in fit.beta_draws")
             sel = rng.integers(0, stable_idx.size, size=draws)
-            idx = stable_idx[sel]
+            triangular_sv_idx = stable_idx[sel]
         else:
-            idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
-        beta_draws = fit.beta_draws[idx]
-        h_draws = fit.h_draws[idx]
-        sigma_eta2_draws = fit.sigma_eta2_draws[idx]
-        q_draws = fit.q_draws[idx]
-        sv_gamma0_draws = fit.sv_gamma0_draws[idx] if fit.sv_gamma0_draws is not None else None
-        sv_phi_draws = fit.sv_phi_draws[idx] if fit.sv_phi_draws is not None else None
+            triangular_sv_idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
+        beta_draws = fit.beta_draws[triangular_sv_idx]
+        h_draws = fit.h_draws[triangular_sv_idx]
+        sigma_eta2_draws = fit.sigma_eta2_draws[triangular_sv_idx]
+        q_draws = fit.q_draws[triangular_sv_idx]
+        sv_gamma0_draws = (
+            fit.sv_gamma0_draws[triangular_sv_idx] if fit.sv_gamma0_draws is not None else None
+        )
+        sv_phi_draws = fit.sv_phi_draws[triangular_sv_idx] if fit.sv_phi_draws is not None else None
 
         sims = np.empty((draws, hmax, fit.dataset.N), dtype=float)
         for d in range(draws):
@@ -389,7 +391,7 @@ def forecast(
         and fit.h_factor_draws is not None
         and fit.sigma_eta2_factor_draws is not None
     ):
-        idx: np.ndarray
+        factor_sv_idx: np.ndarray
         if stationarity_l == "reject":
             from .var import is_stationary
 
@@ -407,16 +409,16 @@ def forecast(
             if stable_idx.size < 1:
                 raise ValueError("no stationary coefficient draws available in fit.beta_draws")
             sel = rng.integers(0, stable_idx.size, size=draws)
-            idx = stable_idx[sel]
+            factor_sv_idx = stable_idx[sel]
         else:
-            idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
+            factor_sv_idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
 
-        beta_draws = fit.beta_draws[idx]
-        h_eta_draws = fit.h_draws[idx]
-        sigma_eta2_eta_draws = fit.sigma_eta2_draws[idx]
-        lam_draws = fit.lambda_draws[idx]
-        h_f_draws = fit.h_factor_draws[idx]
-        sigma_eta2_f_draws = fit.sigma_eta2_factor_draws[idx]
+        beta_draws = fit.beta_draws[factor_sv_idx]
+        h_eta_draws = fit.h_draws[factor_sv_idx]
+        sigma_eta2_eta_draws = fit.sigma_eta2_draws[factor_sv_idx]
+        lam_draws = fit.lambda_draws[factor_sv_idx]
+        h_f_draws = fit.h_factor_draws[factor_sv_idx]
+        sigma_eta2_f_draws = fit.sigma_eta2_factor_draws[factor_sv_idx]
 
         sims = np.empty((draws, hmax, fit.dataset.N), dtype=float)
         for d in range(draws):
@@ -471,7 +473,7 @@ def forecast(
     elif (
         fit.beta_draws is not None and fit.h_draws is not None and fit.sigma_eta2_draws is not None
     ):
-        idx: np.ndarray
+        diagonal_sv_idx: np.ndarray
         if stationarity_l == "reject":
             from .var import is_stationary
 
@@ -489,14 +491,16 @@ def forecast(
             if stable_idx.size < 1:
                 raise ValueError("no stationary coefficient draws available in fit.beta_draws")
             sel = rng.integers(0, stable_idx.size, size=draws)
-            idx = stable_idx[sel]
+            diagonal_sv_idx = stable_idx[sel]
         else:
-            idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
-        beta_draws = fit.beta_draws[idx]
-        h_draws = fit.h_draws[idx]
-        sigma_eta2_draws = fit.sigma_eta2_draws[idx]
-        sv_gamma0_draws = fit.sv_gamma0_draws[idx] if fit.sv_gamma0_draws is not None else None
-        sv_phi_draws = fit.sv_phi_draws[idx] if fit.sv_phi_draws is not None else None
+            diagonal_sv_idx = rng.integers(0, fit.beta_draws.shape[0], size=draws)
+        beta_draws = fit.beta_draws[diagonal_sv_idx]
+        h_draws = fit.h_draws[diagonal_sv_idx]
+        sigma_eta2_draws = fit.sigma_eta2_draws[diagonal_sv_idx]
+        sv_gamma0_draws = (
+            fit.sv_gamma0_draws[diagonal_sv_idx] if fit.sv_gamma0_draws is not None else None
+        )
+        sv_phi_draws = fit.sv_phi_draws[diagonal_sv_idx] if fit.sv_phi_draws is not None else None
 
         sims = np.empty((draws, hmax, fit.dataset.N), dtype=float)
         for d in range(draws):

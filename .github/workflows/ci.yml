@@ -34,6 +34,8 @@ jobs:
         run: ruff check srvar tests scripts
       - name: Format
         run: ruff format --check srvar tests scripts
+      - name: Type check
+        run: mypy srvar
       - name: Test
         run: pytest
 

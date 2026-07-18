@@ -231,7 +231,7 @@ def _resample_frame(
             parts.append(df[col])
             continue
 
-        inferred = pd.infer_freq(s.index)
+        inferred = pd.infer_freq(pd.DatetimeIndex(s.index))
         s2: pd.Series
 
         if inferred is None:

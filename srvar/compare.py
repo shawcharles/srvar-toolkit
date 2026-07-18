@@ -128,6 +128,14 @@ def _regressor_names(*, variables: list[str], p: int, include_intercept: bool) -
     return names
 
 
+def _resolve_datetime_location(index: pd.DatetimeIndex, timestamp: object) -> int:
+    """Return the single location for a configured timestamp."""
+    location = index.get_loc(timestamp)
+    if isinstance(location, (int, np.integer)):
+        return int(location)
+    raise ValueError("configured timestamp must identify exactly one dataset observation")
+
+
 def _resolve_backtest_origins(ds_full: Dataset, bt: dict[str, Any]) -> tuple[list[int], int, int]:
     horizons = list(bt["horizons"])
     max_h = int(max(horizons))
@@ -148,7 +156,7 @@ def _resolve_backtest_origins(ds_full: Dataset, bt: dict[str, Any]) -> tuple[lis
         if origin_start is not None:
             ts = pd.to_datetime(origin_start)
             try:
-                start_i = int(ds_full.time_index.get_loc(ts))
+                start_i = _resolve_datetime_location(ds_full.time_index, ts)
             except KeyError as exc:
                 raise ValueError(
                     f"backtest.origin_start not found in dataset index: {origin_start}"
@@ -158,7 +166,7 @@ def _resolve_backtest_origins(ds_full: Dataset, bt: dict[str, Any]) -> tuple[lis
         if origin_end is not None:
             ts = pd.to_datetime(origin_end)
             try:
-                end_i = int(ds_full.time_index.get_loc(ts))
+                end_i = _resolve_datetime_location(ds_full.time_index, ts)
             except KeyError as exc:
                 raise ValueError(
                     f"backtest.origin_end not found in dataset index: {origin_end}"
@@ -192,7 +200,7 @@ def _resolve_origin_end_index(
             raise ValueError("origin_date requires a datetime index on the dataset")
         ts = pd.to_datetime(origin_date)
         try:
-            resolved = int(ds_full.time_index.get_loc(ts))
+            resolved = _resolve_datetime_location(ds_full.time_index, ts)
         except KeyError as exc:
             raise ValueError(f"origin_date not found in dataset index: {origin_date}") from exc
     elif origin_index is not None:

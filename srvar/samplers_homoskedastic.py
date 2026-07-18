@@ -44,8 +44,8 @@ def _fit_no_elb(
 
         niw = prior.niw
 
-        gamma: np.ndarray | None = None
-        fixed_mask: np.ndarray | None = None
+        ss_gamma: np.ndarray | None = None
+        ss_fixed_mask: np.ndarray | None = None
 
         tau: np.ndarray | None = None
         lambda_: float | None = None
@@ -59,12 +59,12 @@ def _fit_no_elb(
         dl_inv_v0: np.ndarray | None = None
         canonical = prior.minnesota_canonical if prior_family == "minnesota_canonical" else None
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        gamma_keep: list[np.ndarray] = []
-        mu_keep: list[np.ndarray] = []
-        mu_gamma_keep: list[np.ndarray] = []
-        last_posterior: PosteriorNIW | None = None
+        ss_beta_keep: list[np.ndarray] = []
+        ss_sigma_keep: list[np.ndarray] = []
+        ss_gamma_keep: list[np.ndarray] = []
+        ss_mu_keep: list[np.ndarray] = []
+        ss_mu_gamma_keep: list[np.ndarray] = []
+        ss_last_posterior: PosteriorNIW | None = None
 
         for it in range(sampler.draws):
             y_dm = demean_data(y_lat, mu)
@@ -78,7 +78,7 @@ def _fit_no_elb(
                 mn, vn, sn, nun = posterior_niw(
                     x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
                 )
-                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+                ss_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
                 beta_draws, sigma_draws = sample_posterior_niw(
                     mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
                 )
@@ -90,12 +90,16 @@ def _fit_no_elb(
                     raise ValueError("prior.family='ssvs' requires prior.ssvs")
                 spec = prior.ssvs
 
-                if gamma is None:
-                    gamma = rng.uniform(size=k) < float(spec.inclusion_prob)
-                    fixed_mask = np.zeros(k, dtype=bool)
+                if ss_gamma is None:
+                    ss_gamma = np.asarray(
+                        rng.uniform(size=k) < float(spec.inclusion_prob), dtype=bool
+                    )
+                    ss_fixed_mask = np.zeros(k, dtype=bool)
+                if ss_fixed_mask is None:
+                    raise RuntimeError("ssvs fixed-mask state missing")
 
                 v0_diag = v0_diag_from_gamma(
-                    gamma=gamma,
+                    gamma=ss_gamma,
                     spike_var=spec.spike_var,
                     slab_var=spec.slab_var,
                     intercept_slab_var=None,
@@ -105,21 +109,21 @@ def _fit_no_elb(
                 mn, vn, sn, nun = posterior_niw(
                     x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0
                 )
-                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+                ss_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
                 beta_draws, sigma_draws = sample_posterior_niw(
                     mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
                 )
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
-                gamma = sample_gamma_rows(
+                ss_gamma = sample_gamma_rows(
                     beta=beta_lags,
                     sigma=sigma,
-                    gamma=gamma,
+                    gamma=ss_gamma,
                     spike_var=spec.spike_var,
                     slab_var=spec.slab_var,
                     inclusion_prob=spec.inclusion_prob,
-                    fixed_mask=fixed_mask,
+                    fixed_mask=ss_fixed_mask,
                     rng=rng,
                 )
 
@@ -142,7 +146,7 @@ def _fit_no_elb(
                 mn, vn, sn, nun = posterior_niw(
                     x=x, y=y, m0=m0_ssp, v0=v0_used, s0=niw.s0, nu0=niw.nu0
                 )
-                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+                ss_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
                 beta_draws, sigma_draws = sample_posterior_niw(
                     mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
                 )
@@ -205,7 +209,7 @@ def _fit_no_elb(
                 mn, vn, sn, nun = posterior_niw(
                     x=x, y=y, m0=m0_ssp, v0=v0_ssp, s0=niw.s0, nu0=niw.nu0
                 )
-                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+                ss_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
                 if dl_psi is None or dl_vartheta is None or dl_zeta is None:
                     raise RuntimeError("dl state missing")
@@ -271,18 +275,18 @@ def _fit_no_elb(
                 beta_full = np.vstack([c.reshape(1, -1), beta_lags])
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta_full.copy())
-                sigma_keep.append(sigma.copy())
-                mu_keep.append(mu.copy())
+                ss_beta_keep.append(beta_full.copy())
+                ss_sigma_keep.append(sigma.copy())
+                ss_mu_keep.append(mu.copy())
                 if mu_gamma is not None:
-                    mu_gamma_keep.append(mu_gamma.copy())
-                if gamma is not None:
-                    g = gamma
+                    ss_mu_gamma_keep.append(mu_gamma.copy())
+                if ss_gamma is not None:
+                    g = ss_gamma
                     if model.include_intercept:
-                        g = np.concatenate([np.array([True], dtype=bool), gamma])
-                    gamma_keep.append(g.copy())
+                        g = np.concatenate([np.array([True], dtype=bool), ss_gamma])
+                    ss_gamma_keep.append(g.copy())
 
-        if last_posterior is None and prior_family != "minnesota_canonical":
+        if ss_last_posterior is None and prior_family != "minnesota_canonical":
             raise RuntimeError("sampler.draws produced no posterior")
 
         return FitResult(
@@ -290,12 +294,12 @@ def _fit_no_elb(
             model=model,
             prior=prior,
             sampler=sampler,
-            posterior=last_posterior,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
-            gamma_draws=np.stack(gamma_keep) if gamma_keep else None,
-            mu_draws=np.stack(mu_keep) if mu_keep else None,
-            mu_gamma_draws=np.stack(mu_gamma_keep) if mu_gamma_keep else None,
+            posterior=ss_last_posterior,
+            beta_draws=np.stack(ss_beta_keep) if ss_beta_keep else None,
+            sigma_draws=np.stack(ss_sigma_keep) if ss_sigma_keep else None,
+            gamma_draws=np.stack(ss_gamma_keep) if ss_gamma_keep else None,
+            mu_draws=np.stack(ss_mu_keep) if ss_mu_keep else None,
+            mu_gamma_draws=np.stack(ss_mu_gamma_keep) if ss_mu_gamma_keep else None,
         )
 
     x, y = design_matrix(dataset.values, model.p, include_intercept=model.include_intercept)
@@ -309,9 +313,9 @@ def _fit_no_elb(
             assert model.shocks is not None
             lam = np.ones(int(x.shape[0]), dtype=float)
 
-            beta_keep: list[np.ndarray] = []
-            sigma_keep: list[np.ndarray] = []
-            last_posterior: PosteriorNIW | None = None
+            robust_niw_beta_keep: list[np.ndarray] = []
+            robust_niw_sigma_keep: list[np.ndarray] = []
+            robust_niw_last_posterior: PosteriorNIW | None = None
 
             for it in range(sampler.draws):
                 sqrt_lam = np.sqrt(lam).reshape(-1, 1)
@@ -321,7 +325,7 @@ def _fit_no_elb(
                 mn, vn, sn, nun = posterior_niw(
                     x=x_w, y=y_w, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0
                 )
-                last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+                robust_niw_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
                 beta_draws, sigma_draws = sample_posterior_niw(
                     mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
@@ -333,10 +337,10 @@ def _fit_no_elb(
                 lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
 
                 if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                    beta_keep.append(beta.copy())
-                    sigma_keep.append(sigma.copy())
+                    robust_niw_beta_keep.append(beta.copy())
+                    robust_niw_sigma_keep.append(sigma.copy())
 
-            if last_posterior is None:
+            if robust_niw_last_posterior is None:
                 raise RuntimeError("sampler.draws produced no posterior")
 
             return FitResult(
@@ -344,9 +348,9 @@ def _fit_no_elb(
                 model=model,
                 prior=prior,
                 sampler=sampler,
-                posterior=last_posterior,
-                beta_draws=np.stack(beta_keep) if beta_keep else None,
-                sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+                posterior=robust_niw_last_posterior,
+                beta_draws=np.stack(robust_niw_beta_keep) if robust_niw_beta_keep else None,
+                sigma_draws=np.stack(robust_niw_sigma_keep) if robust_niw_sigma_keep else None,
             )
 
         mn, vn, sn, nun = posterior_niw(x=x, y=y, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0)
@@ -382,15 +386,15 @@ def _fit_no_elb(
                 "prior_family='minnesota_canonical' requires prior.minnesota_canonical"
             )
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
+        canonical_beta_keep: list[np.ndarray] = []
+        canonical_sigma_keep: list[np.ndarray] = []
 
-        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+        canonical_precision = np.ones(int(x.shape[0]), dtype=float) if robust else None
 
         for it in range(sampler.draws):
             if robust:
-                assert lam is not None
-                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                assert canonical_precision is not None
+                sqrt_lam = np.sqrt(canonical_precision).reshape(-1, 1)
                 x_w = x * sqrt_lam
                 y_w = y * sqrt_lam
             else:
@@ -410,11 +414,13 @@ def _fit_no_elb(
             if robust:
                 assert model.shocks is not None
                 resid = y - x @ beta
-                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+                canonical_precision = update_precision_scales(
+                    errors=resid, sigma=sigma, spec=model.shocks, rng=rng
+                )
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta.copy())
-                sigma_keep.append(sigma.copy())
+                canonical_beta_keep.append(beta.copy())
+                canonical_sigma_keep.append(sigma.copy())
 
         return FitResult(
             dataset=dataset,
@@ -422,8 +428,8 @@ def _fit_no_elb(
             prior=prior,
             sampler=sampler,
             posterior=None,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+            beta_draws=np.stack(canonical_beta_keep) if canonical_beta_keep else None,
+            sigma_draws=np.stack(canonical_sigma_keep) if canonical_sigma_keep else None,
         )
 
     if prior_family == "blasso":
@@ -447,18 +453,18 @@ def _fit_no_elb(
         if model.include_intercept:
             c_mask[0] = True
 
-        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+        blasso_precision = np.ones(int(x.shape[0]), dtype=float) if robust else None
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        last_posterior = None
+        blasso_beta_keep: list[np.ndarray] = []
+        blasso_sigma_keep: list[np.ndarray] = []
+        blasso_last_posterior: PosteriorNIW | None = None
 
         for it in range(sampler.draws):
             v0 = _blasso_v0_from_state(tau=tau)
 
             if robust:
-                assert lam is not None
-                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                assert blasso_precision is not None
+                sqrt_lam = np.sqrt(blasso_precision).reshape(-1, 1)
                 x_w = x * sqrt_lam
                 y_w = y * sqrt_lam
             else:
@@ -466,7 +472,7 @@ def _fit_no_elb(
                 y_w = y
 
             mn, vn, sn, nun = posterior_niw(x=x_w, y=y_w, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
-            last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+            blasso_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
             beta_draws, sigma_draws = sample_posterior_niw(
                 mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
@@ -500,13 +506,15 @@ def _fit_no_elb(
             if robust:
                 assert model.shocks is not None
                 resid = y - x @ beta
-                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+                blasso_precision = update_precision_scales(
+                    errors=resid, sigma=sigma, spec=model.shocks, rng=rng
+                )
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta.copy())
-                sigma_keep.append(sigma.copy())
+                blasso_beta_keep.append(beta.copy())
+                blasso_sigma_keep.append(sigma.copy())
 
-        if last_posterior is None:
+        if blasso_last_posterior is None:
             raise RuntimeError("sampler.draws produced no posterior")
 
         return FitResult(
@@ -514,9 +522,9 @@ def _fit_no_elb(
             model=model,
             prior=prior,
             sampler=sampler,
-            posterior=last_posterior,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+            posterior=blasso_last_posterior,
+            beta_draws=np.stack(blasso_beta_keep) if blasso_beta_keep else None,
+            sigma_draws=np.stack(blasso_sigma_keep) if blasso_sigma_keep else None,
         )
 
     if prior_family == "dl":
@@ -537,16 +545,16 @@ def _fit_no_elb(
         zeta = float(spec_d.dl_scaler)
         inv_v0 = 1.0 / (psi * (vartheta * vartheta) * (zeta * zeta) + 1e-6)
 
-        lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+        dl_precision = np.ones(int(x.shape[0]), dtype=float) if robust else None
 
-        beta_keep: list[np.ndarray] = []
-        sigma_keep: list[np.ndarray] = []
-        last_posterior = None
+        dl_beta_keep: list[np.ndarray] = []
+        dl_sigma_keep: list[np.ndarray] = []
+        dl_last_posterior: PosteriorNIW | None = None
 
         for it in range(sampler.draws):
             if robust:
-                assert lam is not None
-                sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+                assert dl_precision is not None
+                sqrt_lam = np.sqrt(dl_precision).reshape(-1, 1)
                 x_w = x * sqrt_lam
                 y_w = y * sqrt_lam
             else:
@@ -565,7 +573,7 @@ def _fit_no_elb(
             mn, vn, sn, nun = posterior_niw(
                 x=x_w, y=y_w, m0=niw.m0, v0=niw.v0, s0=niw.s0, nu0=niw.nu0
             )
-            last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+            dl_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
             psi, vartheta, zeta, inv_v0 = _dl_update(
                 beta=beta,
@@ -579,13 +587,15 @@ def _fit_no_elb(
             if robust:
                 assert model.shocks is not None
                 resid = y - x @ beta
-                lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+                dl_precision = update_precision_scales(
+                    errors=resid, sigma=sigma, spec=model.shocks, rng=rng
+                )
 
             if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-                beta_keep.append(beta.copy())
-                sigma_keep.append(sigma.copy())
+                dl_beta_keep.append(beta.copy())
+                dl_sigma_keep.append(sigma.copy())
 
-        if last_posterior is None:
+        if dl_last_posterior is None:
             raise RuntimeError("sampler.draws produced no posterior")
 
         return FitResult(
@@ -593,9 +603,9 @@ def _fit_no_elb(
             model=model,
             prior=prior,
             sampler=sampler,
-            posterior=last_posterior,
-            beta_draws=np.stack(beta_keep) if beta_keep else None,
-            sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
+            posterior=dl_last_posterior,
+            beta_draws=np.stack(dl_beta_keep) if dl_beta_keep else None,
+            sigma_draws=np.stack(dl_sigma_keep) if dl_sigma_keep else None,
         )
 
     if prior.ssvs is None:
@@ -609,22 +619,22 @@ def _fit_no_elb(
     if niw.s0.shape != (_n, _n):
         raise ValueError("ssvs requires prior.niw.s0 with shape (N, N)")
 
-    gamma = rng.uniform(size=k) < spec.inclusion_prob
-    fixed_mask = np.zeros(k, dtype=bool)
+    ssvs_gamma = np.asarray(rng.uniform(size=k) < spec.inclusion_prob, dtype=bool)
+    ssvs_fixed_mask = np.zeros(k, dtype=bool)
     if model.include_intercept and spec.fix_intercept:
-        fixed_mask[0] = True
-        gamma[0] = True
+        ssvs_fixed_mask[0] = True
+        ssvs_gamma[0] = True
 
-    beta_keep = []
-    sigma_keep = []
-    gamma_keep = []
-    last_posterior = None
-    lam = np.ones(int(x.shape[0]), dtype=float) if robust else None
+    ssvs_beta_keep: list[np.ndarray] = []
+    ssvs_sigma_keep: list[np.ndarray] = []
+    ssvs_gamma_keep: list[np.ndarray] = []
+    ssvs_last_posterior: PosteriorNIW | None = None
+    ssvs_precision = np.ones(int(x.shape[0]), dtype=float) if robust else None
 
     for it in range(sampler.draws):
         if robust:
-            assert lam is not None
-            sqrt_lam = np.sqrt(lam).reshape(-1, 1)
+            assert ssvs_precision is not None
+            sqrt_lam = np.sqrt(ssvs_precision).reshape(-1, 1)
             x_w = x * sqrt_lam
             y_w = y * sqrt_lam
         else:
@@ -632,7 +642,7 @@ def _fit_no_elb(
             y_w = y
 
         v0_diag = v0_diag_from_gamma(
-            gamma=gamma,
+            gamma=ssvs_gamma,
             spike_var=spec.spike_var,
             slab_var=spec.slab_var,
             intercept_slab_var=spec.intercept_slab_var,
@@ -640,7 +650,7 @@ def _fit_no_elb(
         v0 = np.diag(v0_diag)
 
         mn, vn, sn, nun = posterior_niw(x=x_w, y=y_w, m0=niw.m0, v0=v0, s0=niw.s0, nu0=niw.nu0)
-        last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
+        ssvs_last_posterior = PosteriorNIW(mn=mn, vn=vn, sn=sn, nun=nun)
 
         beta_draws, sigma_draws = sample_posterior_niw(
             mn=mn, vn=vn, sn=sn, nun=nun, draws=1, rng=rng
@@ -648,28 +658,30 @@ def _fit_no_elb(
         beta = beta_draws[0]
         sigma = sigma_draws[0]
 
-        gamma = sample_gamma_rows(
+        ssvs_gamma = sample_gamma_rows(
             beta=beta,
             sigma=sigma,
-            gamma=gamma,
+            gamma=ssvs_gamma,
             spike_var=spec.spike_var,
             slab_var=spec.slab_var,
             inclusion_prob=spec.inclusion_prob,
-            fixed_mask=fixed_mask,
+            fixed_mask=ssvs_fixed_mask,
             rng=rng,
         )
 
         if robust:
             assert model.shocks is not None
             resid = y - x @ beta
-            lam = update_precision_scales(errors=resid, sigma=sigma, spec=model.shocks, rng=rng)
+            ssvs_precision = update_precision_scales(
+                errors=resid, sigma=sigma, spec=model.shocks, rng=rng
+            )
 
         if it >= sampler.burn_in and ((it - sampler.burn_in) % sampler.thin == 0):
-            beta_keep.append(beta.copy())
-            sigma_keep.append(sigma.copy())
-            gamma_keep.append(gamma.copy())
+            ssvs_beta_keep.append(beta.copy())
+            ssvs_sigma_keep.append(sigma.copy())
+            ssvs_gamma_keep.append(ssvs_gamma.copy())
 
-    if last_posterior is None:
+    if ssvs_last_posterior is None:
         raise RuntimeError("sampler.draws produced no posterior")
 
     return FitResult(
@@ -677,10 +689,10 @@ def _fit_no_elb(
         model=model,
         prior=prior,
         sampler=sampler,
-        posterior=last_posterior,
-        beta_draws=np.stack(beta_keep) if beta_keep else None,
-        sigma_draws=np.stack(sigma_keep) if sigma_keep else None,
-        gamma_draws=np.stack(gamma_keep) if gamma_keep else None,
+        posterior=ssvs_last_posterior,
+        beta_draws=np.stack(ssvs_beta_keep) if ssvs_beta_keep else None,
+        sigma_draws=np.stack(ssvs_sigma_keep) if ssvs_sigma_keep else None,
+        gamma_draws=np.stack(ssvs_gamma_keep) if ssvs_gamma_keep else None,
     )
 
 
@@ -732,8 +744,8 @@ def _fit_elb_gibbs(
 
         niw = prior.niw
 
-        gamma: np.ndarray | None = None
-        fixed_mask: np.ndarray | None = None
+        elb_ss_gamma: np.ndarray | None = None
+        elb_ss_fixed_mask: np.ndarray | None = None
 
         tau: np.ndarray | None = None
         lambda_: float | None = None
@@ -772,12 +784,16 @@ def _fit_elb_gibbs(
                     raise ValueError("prior.family='ssvs' requires prior.ssvs")
                 spec = prior.ssvs
 
-                if gamma is None:
-                    gamma = rng.uniform(size=k) < float(spec.inclusion_prob)
-                    fixed_mask = np.zeros(k, dtype=bool)
+                if elb_ss_gamma is None:
+                    elb_ss_gamma = np.asarray(
+                        rng.uniform(size=k) < float(spec.inclusion_prob), dtype=bool
+                    )
+                    elb_ss_fixed_mask = np.zeros(k, dtype=bool)
+                if elb_ss_fixed_mask is None:
+                    raise RuntimeError("ssvs fixed-mask state missing")
 
                 v0_diag = v0_diag_from_gamma(
-                    gamma=gamma,
+                    gamma=elb_ss_gamma,
                     spike_var=spec.spike_var,
                     slab_var=spec.slab_var,
                     intercept_slab_var=None,
@@ -792,14 +808,14 @@ def _fit_elb_gibbs(
                 beta_lags = beta_draws[0]
                 sigma = sigma_draws[0]
 
-                gamma = sample_gamma_rows(
+                elb_ss_gamma = sample_gamma_rows(
                     beta=beta_lags,
                     sigma=sigma,
-                    gamma=gamma,
+                    gamma=elb_ss_gamma,
                     spike_var=spec.spike_var,
                     slab_var=spec.slab_var,
                     inclusion_prob=spec.inclusion_prob,
-                    fixed_mask=fixed_mask,
+                    fixed_mask=elb_ss_fixed_mask,
                     rng=rng,
                 )
 
@@ -970,10 +986,10 @@ def _fit_elb_gibbs(
                 mu_keep.append(mu.copy())
                 if mu_gamma is not None:
                     mu_gamma_keep.append(mu_gamma.copy())
-                if gamma is not None:
-                    g = gamma
+                if elb_ss_gamma is not None:
+                    g = elb_ss_gamma
                     if model.include_intercept:
-                        g = np.concatenate([np.array([True], dtype=bool), gamma])
+                        g = np.concatenate([np.array([True], dtype=bool), elb_ss_gamma])
                     gamma_keep.append(g.copy())
 
         if last_posterior is None and prior_family != "minnesota_canonical":
@@ -1007,8 +1023,8 @@ def _fit_elb_gibbs(
 
     niw = prior.niw
 
-    gamma = None
-    fixed_mask = None
+    elb_gamma: np.ndarray | None = None
+    elb_fixed_mask: np.ndarray | None = None
     ssvs_spec = prior.ssvs if prior_family == "ssvs" else None
     blasso = prior.blasso if prior_family == "blasso" else None
     dl = prior.dl if prior_family == "dl" else None
@@ -1050,15 +1066,17 @@ def _fit_elb_gibbs(
             if niw.s0.shape != (_n, _n):
                 raise ValueError("ssvs requires prior.niw.s0 with shape (N, N)")
 
-            if gamma is None:
-                gamma = rng.uniform(size=k) < ssvs_spec.inclusion_prob
-                fixed_mask = np.zeros(k, dtype=bool)
+            if elb_gamma is None:
+                elb_gamma = np.asarray(rng.uniform(size=k) < ssvs_spec.inclusion_prob, dtype=bool)
+                elb_fixed_mask = np.zeros(k, dtype=bool)
                 if model.include_intercept and ssvs_spec.fix_intercept:
-                    fixed_mask[0] = True
-                    gamma[0] = True
+                    elb_fixed_mask[0] = True
+                    elb_gamma[0] = True
+            if elb_fixed_mask is None:
+                raise RuntimeError("ssvs fixed-mask state missing")
 
             v0_diag = v0_diag_from_gamma(
-                gamma=gamma,
+                gamma=elb_gamma,
                 spike_var=ssvs_spec.spike_var,
                 slab_var=ssvs_spec.slab_var,
                 intercept_slab_var=ssvs_spec.intercept_slab_var,
@@ -1074,14 +1092,14 @@ def _fit_elb_gibbs(
             beta = beta_draws[0]
             sigma = sigma_draws[0]
 
-            gamma = sample_gamma_rows(
+            elb_gamma = sample_gamma_rows(
                 beta=beta,
                 sigma=sigma,
-                gamma=gamma,
+                gamma=elb_gamma,
                 spike_var=ssvs_spec.spike_var,
                 slab_var=ssvs_spec.slab_var,
                 inclusion_prob=ssvs_spec.inclusion_prob,
-                fixed_mask=fixed_mask,
+                fixed_mask=elb_fixed_mask,
                 rng=rng,
             )
 
@@ -1222,8 +1240,8 @@ def _fit_elb_gibbs(
             beta_keep.append(beta.copy())
             sigma_keep.append(sigma.copy())
             y_lat_keep.append(y_lat.copy())
-            if gamma is not None:
-                gamma_keep.append(gamma.copy())
+            if elb_gamma is not None:
+                gamma_keep.append(elb_gamma.copy())
 
     if last_posterior is None and prior_family != "minnesota_canonical":
         raise RuntimeError("sampler.draws produced no posterior")
