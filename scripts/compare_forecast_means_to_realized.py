@@ -49,6 +49,7 @@ def build_forecast_mean_comparison(
     candidate_run_dir: str | Path,
     *,
     variables: list[str] | None = None,
+    allow_legacy_pickle: bool = False,
 ) -> pd.DataFrame:
     baseline_dir = Path(baseline_run_dir)
     candidate_dir = Path(candidate_run_dir)
@@ -77,8 +78,8 @@ def build_forecast_mean_comparison(
     rows: list[dict[str, object]] = []
     for name in shared_names:
         origin_end_i = int(Path(name).stem.split("_")[1])
-        fc_b = load_forecast_npz(baseline_files[name])
-        fc_c = load_forecast_npz(candidate_files[name])
+        fc_b = load_forecast_npz(baseline_files[name], allow_legacy_pickle=allow_legacy_pickle)
+        fc_c = load_forecast_npz(candidate_files[name], allow_legacy_pickle=allow_legacy_pickle)
         if fc_b.variables != fc_c.variables:
             raise ValueError(f"variable mismatch for forecast artifact {name}")
 
@@ -116,9 +117,11 @@ def build_forecast_mean_comparison(
     if not rows:
         raise ValueError("no comparison rows produced")
 
-    return pd.DataFrame(rows).sort_values(
-        ["variable", "horizon", "origin_index"]
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["variable", "horizon", "origin_index"])
+        .reset_index(drop=True)
+    )
 
 
 def summarize_forecast_mean_comparison(df: pd.DataFrame) -> pd.DataFrame:
@@ -181,19 +184,29 @@ def main() -> None:
         default=None,
         help="Optional path for origin-level detail Markdown output",
     )
+    ap.add_argument(
+        "--allow-legacy-pickle",
+        action="store_true",
+        help="Trusted artifacts only; this can execute pickle code.",
+    )
     args = ap.parse_args()
 
     baseline_dir = Path(args.baseline_run_dir)
     default_root = baseline_dir.parent
     out_csv = (
-        Path(args.out_csv) if args.out_csv is not None else default_root / "forecast_mean_summary.csv"
+        Path(args.out_csv)
+        if args.out_csv is not None
+        else default_root / "forecast_mean_summary.csv"
     )
     out_md = (
         Path(args.out_md) if args.out_md is not None else default_root / "forecast_mean_summary.md"
     )
 
     comparison = build_forecast_mean_comparison(
-        baseline_dir, args.candidate_run_dir, variables=args.variables
+        baseline_dir,
+        args.candidate_run_dir,
+        variables=args.variables,
+        allow_legacy_pickle=args.allow_legacy_pickle,
     )
     comparison = _filter_cases(comparison, args.cases)
     summary = summarize_forecast_mean_comparison(comparison)

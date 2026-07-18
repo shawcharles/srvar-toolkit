@@ -407,6 +407,11 @@ from srvar.artifacts import load_run_dir
 fit_res = load_run_dir("outputs/my_run")
 ```
 
+New artifacts do not require pickle deserialisation. Artifacts written before the format migration
+need `allow_legacy_pickle=True` and must only be loaded when their source and integrity are trusted;
+that option can execute pickle code. See the [artifact reference](docs/reference/artifacts.md) for
+the migration details.
+
 For an end-to-end example (fit → IRF/FEVD/HD, including factor SV), see
 `examples/fsv_structural_analysis.py`.
 

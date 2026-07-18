@@ -23,7 +23,9 @@ def _render_markdown_table(df: pd.DataFrame) -> str:
         return "\n".join([header, separator, *body_rows])
 
 
-def build_dispersion_frame(forecasts_dir: str | Path) -> pd.DataFrame:
+def build_dispersion_frame(
+    forecasts_dir: str | Path, *, allow_legacy_pickle: bool = False
+) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     root = Path(forecasts_dir)
     files = sorted(root.glob("origin_*.npz"))
@@ -31,7 +33,7 @@ def build_dispersion_frame(forecasts_dir: str | Path) -> pd.DataFrame:
         raise FileNotFoundError(f"no origin_*.npz forecast files found under {root}")
 
     for path in files:
-        fc = load_forecast_npz(path)
+        fc = load_forecast_npz(path, allow_legacy_pickle=allow_legacy_pickle)
         draws = np.asarray(fc.draws, dtype=float)
         q10 = np.quantile(draws, q=0.10, axis=0)
         q25 = np.quantile(draws, q=0.25, axis=0)
@@ -58,9 +60,11 @@ def build_dispersion_frame(forecasts_dir: str | Path) -> pd.DataFrame:
 def compare_dispersion_dirs(
     baseline_dir: str | Path,
     candidate_dir: str | Path,
+    *,
+    allow_legacy_pickle: bool = False,
 ) -> pd.DataFrame:
-    base = build_dispersion_frame(baseline_dir)
-    cand = build_dispersion_frame(candidate_dir)
+    base = build_dispersion_frame(baseline_dir, allow_legacy_pickle=allow_legacy_pickle)
+    cand = build_dispersion_frame(candidate_dir, allow_legacy_pickle=allow_legacy_pickle)
     merged = cand.merge(
         base,
         on=["origin", "variable", "horizon"],
@@ -72,9 +76,7 @@ def compare_dispersion_dirs(
 
     for metric in ("predictive_std", "interval_50_width", "interval_80_width"):
         merged[f"{metric}_diff"] = merged[f"{metric}_candidate"] - merged[f"{metric}_baseline"]
-        merged[f"{metric}_rel"] = (
-            merged[f"{metric}_candidate"] / merged[f"{metric}_baseline"]
-        )
+        merged[f"{metric}_rel"] = merged[f"{metric}_candidate"] / merged[f"{metric}_baseline"]
     return merged
 
 
@@ -109,6 +111,11 @@ def main() -> None:
         default=None,
         help="Path for variable/horizon-level Markdown output (default: next to baseline dir)",
     )
+    ap.add_argument(
+        "--allow-legacy-pickle",
+        action="store_true",
+        help="Trusted artifacts only; this can execute pickle code.",
+    )
     args = ap.parse_args()
 
     baseline_dir = Path(args.baseline_forecasts)
@@ -125,7 +132,9 @@ def main() -> None:
         else default_root / "forecast_dispersion_summary.md"
     )
 
-    comparison = compare_dispersion_dirs(baseline_dir, candidate_dir)
+    comparison = compare_dispersion_dirs(
+        baseline_dir, candidate_dir, allow_legacy_pickle=args.allow_legacy_pickle
+    )
     summary = summarize_dispersion_comparison(comparison)
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)

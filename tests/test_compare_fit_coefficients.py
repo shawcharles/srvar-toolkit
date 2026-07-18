@@ -16,6 +16,7 @@ def _write_run_dir(
     *,
     csv_path: Path,
     beta_draws: np.ndarray,
+    legacy: bool = False,
 ) -> None:
     root.mkdir(parents=True, exist_ok=True)
     root.joinpath("config.yml").write_text(
@@ -64,7 +65,16 @@ sampler:
         posterior=None,
         beta_draws=np.asarray(beta_draws, dtype=float),
     )
-    save_fit_npz(root / "fit_result.npz", fit_res)
+    if legacy:
+        np.savez_compressed(
+            root / "fit_result.npz",
+            variables=np.asarray(ds.variables, dtype=object),
+            time_index=np.asarray(ds.time_index.to_numpy(), dtype="datetime64[ns]"),
+            values=ds.values,
+            beta_draws=fit_res.beta_draws,
+        )
+    else:
+        save_fit_npz(root / "fit_result.npz", fit_res)
 
 
 def test_compare_fit_coefficients_script_writes_summary_and_detail(tmp_path: Path) -> None:
@@ -142,3 +152,34 @@ def test_compare_fit_coefficients_script_writes_summary_and_detail(tmp_path: Pat
     assert float(lag_row["candidate_mean"]) == 0.9
     assert set(detail["method"]) == {"baseline", "candidate"}
     assert set(detail["regressor"]) == {"const", "y1_lag1"}
+
+
+def test_compare_fit_coefficients_legacy_flag_is_explicit(tmp_path: Path) -> None:
+    csv_path = tmp_path / "data.csv"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2000-01-01", periods=4, freq="QS"),
+            "y1": [1.0, 2.0, 3.0, 4.0],
+            "y2": [0.0, 1.0, 0.5, 1.5],
+        }
+    ).to_csv(csv_path, index=False)
+    beta_draws = np.ones((2, 3, 2))
+    baseline_dir = tmp_path / "baseline"
+    candidate_dir = tmp_path / "candidate"
+    _write_run_dir(baseline_dir, csv_path=csv_path, beta_draws=beta_draws, legacy=True)
+    _write_run_dir(candidate_dir, csv_path=csv_path, beta_draws=beta_draws, legacy=True)
+
+    command = [
+        sys.executable,
+        "scripts/compare_fit_coefficients.py",
+        str(baseline_dir),
+        str(candidate_dir),
+    ]
+    rejected = subprocess.run(command, capture_output=True, text=True)
+    assert rejected.returncode != 0
+    assert "legacy pickle-backed" in rejected.stderr
+
+    completed = subprocess.run(
+        [*command, "--allow-legacy-pickle"], check=True, capture_output=True, text=True
+    )
+    assert "wrote_csv=" in completed.stdout

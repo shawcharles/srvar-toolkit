@@ -12,6 +12,20 @@ from srvar.spec import ModelSpec, PriorSpec, SamplerConfig
 from srvar.xarray import fit_to_xarray
 
 
+def _assert_safe_npz(path: Path, *, artifact_kind: str) -> None:
+    with np.load(path, allow_pickle=False) as npz:
+        assert "allow_pickle" not in npz
+        assert npz["format_version"].shape == ()
+        assert npz["format_version"].dtype.kind in {"i", "u"}
+        assert npz["format_version"].item() == 1
+        assert npz["artifact_kind"].shape == ()
+        assert npz["artifact_kind"].dtype.kind == "U"
+        assert npz["artifact_kind"].item() == artifact_kind
+        assert npz["variables"].dtype.kind == "U"
+        for key in npz.files:
+            assert not np.asarray(npz[key]).dtype.hasobject, key
+
+
 def _rebuild_fitresult_from_npz(*, original: FitResult, fit_npz: object) -> FitResult:
     return FitResult(
         dataset=fit_npz.dataset,
@@ -56,6 +70,10 @@ def test_fit_npz_roundtrip_homoskedastic_and_xarray(tmp_path: Path) -> None:
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(1))
     path = tmp_path / "fit_result.npz"
     save_fit_npz(path, fit_res)
+    _assert_safe_npz(path, artifact_kind="fit")
+    with np.load(path, allow_pickle=False) as npz:
+        assert "latent_values" not in npz
+        assert "h_draws" not in npz
 
     fit_npz = load_fit_npz(path)
     assert fit_npz.beta_draws is not None
@@ -102,6 +120,7 @@ def test_fit_npz_roundtrip_fsv_elb_and_xarray(tmp_path: Path) -> None:
     fit_res = fit(ds, model, prior, sampler, rng=np.random.default_rng(3))
     path = tmp_path / "fit_result_fsv.npz"
     save_fit_npz(path, fit_res)
+    _assert_safe_npz(path, artifact_kind="fit")
 
     fit_npz = load_fit_npz(path)
     assert fit_npz.lambda_draws is not None
@@ -149,6 +168,7 @@ def test_forecast_npz_roundtrip_preserves_latent_draws(tmp_path: Path) -> None:
 
     path = tmp_path / "forecast_result.npz"
     save_forecast_npz(path, fc)
+    _assert_safe_npz(path, artifact_kind="forecast")
     fc_loaded = load_forecast_npz(path)
 
     assert fc_loaded.latent_draws is not None

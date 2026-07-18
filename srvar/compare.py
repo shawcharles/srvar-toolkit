@@ -421,6 +421,7 @@ def build_fit_coefficient_detail(
     variables: list[str] | None = None,
     regressors: list[str] | None = None,
     cases: list[str] | None = None,
+    allow_legacy_pickle: bool = False,
 ) -> pd.DataFrame:
     """Build a long-format coefficient-draw table for paired fit runs.
 
@@ -433,9 +434,11 @@ def build_fit_coefficient_detail(
     cases:
         Optional `VARIABLE:REGRESSOR` filters. When provided, only those exact
         equation/regressor pairs are returned.
+    allow_legacy_pickle:
+        Set only for trusted pre-migration artifacts. This may execute pickle code.
     """
-    fit_b = load_run_dir(baseline_run_dir)
-    fit_c = load_run_dir(candidate_run_dir)
+    fit_b = load_run_dir(baseline_run_dir, allow_legacy_pickle=allow_legacy_pickle)
+    fit_c = load_run_dir(candidate_run_dir, allow_legacy_pickle=allow_legacy_pickle)
 
     if fit_b.dataset.variables != fit_c.dataset.variables:
         raise ValueError("fit result variable lists do not match")

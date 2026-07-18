@@ -1,67 +1,178 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile
 
 import numpy as np
 import pandas as pd
+from numpy.lib.npyio import NpzFile
 
 from .data.dataset import Dataset
 from .results import FitResult, ForecastResult, PosteriorNIW
+
+_FORMAT_VERSION = 1
+_FORMAT_VERSION_KEY = "format_version"
+_ARTIFACT_KIND_KEY = "artifact_kind"
+
+
+def _add_optional(payload: dict[str, Any], key: str, value: Any) -> None:
+    if value is not None:
+        payload[key] = value
+
+
+def _save_safe_npz(path: Path, payload: dict[str, Any]) -> None:
+    for key, value in payload.items():
+        if np.asarray(value).dtype.hasobject:
+            raise TypeError(f"cannot save safe NPZ artifact: field {key!r} has object dtype")
+    np.savez_compressed(path, **payload)
+
+
+def _artifact_format_error(path: Path, detail: str) -> ValueError:
+    return ValueError(f"invalid srvar artifact {path}: {detail}")
+
+
+def _load_npz_array(npz: NpzFile, key: str, path: Path) -> np.ndarray:
+    try:
+        return npz[key]
+    except ValueError as exc:
+        if "Object arrays cannot be loaded" in str(exc):
+            raise _artifact_format_error(
+                path, f"field {key!r} has object dtype and cannot be loaded safely"
+            ) from exc
+        raise
+
+
+def _validate_marker(npz: NpzFile, path: Path, *, expected_kind: str) -> None:
+    format_version = _load_npz_array(npz, _FORMAT_VERSION_KEY, path)
+    if format_version.shape != () or format_version.dtype.kind not in {"i", "u"}:
+        raise _artifact_format_error(
+            path, "format_version must be a zero-dimensional signed or unsigned integer"
+        )
+    if format_version.item() != _FORMAT_VERSION:
+        raise _artifact_format_error(path, f"unsupported format_version {format_version.item()!r}")
+
+    artifact_kind = _load_npz_array(npz, _ARTIFACT_KIND_KEY, path)
+    if artifact_kind.shape != () or artifact_kind.dtype.kind != "U":
+        raise _artifact_format_error(
+            path, "artifact_kind must be a zero-dimensional Unicode string"
+        )
+    if artifact_kind.item() != expected_kind:
+        raise _artifact_format_error(
+            path,
+            f"artifact_kind must be {expected_kind!r}, got {artifact_kind.item()!r}",
+        )
+
+
+@contextmanager
+def _open_artifact_npz(
+    path: Path, *, expected_kind: str, allow_legacy_pickle: bool
+) -> Iterator[NpzFile]:
+    try:
+        strict_loaded = np.load(path, allow_pickle=False)
+    except OSError:
+        raise
+    except (BadZipFile, EOFError, ValueError) as exc:
+        raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
+
+    if not isinstance(strict_loaded, NpzFile):
+        raise _artifact_format_error(path, "expected an NPZ archive")
+
+    marker_keys = {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY}
+    present_markers = marker_keys.intersection(strict_loaded.files)
+    if not present_markers:
+        strict_loaded.close()
+        if not allow_legacy_pickle:
+            raise _artifact_format_error(
+                path,
+                "legacy pickle-backed format is not loaded by default for security; "
+                "load only a trusted source with allow_legacy_pickle=True",
+            )
+        try:
+            legacy_loaded = np.load(path, allow_pickle=True)
+        except OSError:
+            raise
+        except (BadZipFile, EOFError, ValueError) as exc:
+            raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
+        if not isinstance(legacy_loaded, NpzFile):
+            raise _artifact_format_error(path, "expected an NPZ archive")
+        try:
+            yield legacy_loaded
+        finally:
+            legacy_loaded.close()
+        return
+
+    try:
+        if present_markers != marker_keys:
+            raise _artifact_format_error(path, "incomplete format markers")
+        _validate_marker(strict_loaded, path, expected_kind=expected_kind)
+        yield strict_loaded
+    finally:
+        strict_loaded.close()
 
 
 def save_fit_npz(path: str | Path, fit_res: FitResult) -> None:
     p = Path(path)
     payload: dict[str, Any] = {
-        "variables": np.asarray(fit_res.dataset.variables, dtype=object),
+        _FORMAT_VERSION_KEY: np.asarray(_FORMAT_VERSION, dtype=np.int64),
+        _ARTIFACT_KIND_KEY: np.asarray("fit", dtype=str),
+        "variables": np.asarray(fit_res.dataset.variables, dtype=str),
         "time_index": np.asarray(fit_res.dataset.time_index.to_numpy(), dtype="datetime64[ns]"),
         "values": fit_res.dataset.values,
-        "beta_draws": fit_res.beta_draws,
-        "sigma_draws": fit_res.sigma_draws,
-        "q_draws": fit_res.q_draws,
-        "latent_draws": fit_res.latent_draws,
-        "latent_values": (
-            fit_res.latent_dataset.values if fit_res.latent_dataset is not None else None
-        ),
-        "posterior_mn": fit_res.posterior.mn if fit_res.posterior is not None else None,
-        "posterior_vn": fit_res.posterior.vn if fit_res.posterior is not None else None,
-        "posterior_sn": fit_res.posterior.sn if fit_res.posterior is not None else None,
-        "posterior_nun": fit_res.posterior.nun if fit_res.posterior is not None else None,
-        "h_draws": fit_res.h_draws,
-        "h0_draws": fit_res.h0_draws,
-        "sigma_eta2_draws": fit_res.sigma_eta2_draws,
-        "sv_gamma0_draws": fit_res.sv_gamma0_draws,
-        "sv_phi_draws": fit_res.sv_phi_draws,
-        "lambda_draws": fit_res.lambda_draws,
-        "factor_draws": fit_res.factor_draws,
-        "h_factor_draws": fit_res.h_factor_draws,
-        "h0_factor_draws": fit_res.h0_factor_draws,
-        "sigma_eta2_factor_draws": fit_res.sigma_eta2_factor_draws,
-        "gamma_draws": fit_res.gamma_draws,
-        "mu_draws": fit_res.mu_draws,
-        "mu_gamma_draws": fit_res.mu_gamma_draws,
     }
-    np.savez_compressed(p, allow_pickle=True, **payload)
+    _add_optional(payload, "beta_draws", fit_res.beta_draws)
+    _add_optional(payload, "sigma_draws", fit_res.sigma_draws)
+    _add_optional(payload, "q_draws", fit_res.q_draws)
+    _add_optional(payload, "latent_draws", fit_res.latent_draws)
+    _add_optional(
+        payload, "latent_values", fit_res.latent_dataset.values if fit_res.latent_dataset else None
+    )
+    if fit_res.posterior is not None:
+        _add_optional(payload, "posterior_mn", fit_res.posterior.mn)
+        _add_optional(payload, "posterior_vn", fit_res.posterior.vn)
+        _add_optional(payload, "posterior_sn", fit_res.posterior.sn)
+        _add_optional(payload, "posterior_nun", fit_res.posterior.nun)
+    for key in (
+        "h_draws",
+        "h0_draws",
+        "sigma_eta2_draws",
+        "sv_gamma0_draws",
+        "sv_phi_draws",
+        "lambda_draws",
+        "factor_draws",
+        "h_factor_draws",
+        "h0_factor_draws",
+        "sigma_eta2_factor_draws",
+        "gamma_draws",
+        "mu_draws",
+        "mu_gamma_draws",
+    ):
+        _add_optional(payload, key, getattr(fit_res, key))
+    _save_safe_npz(p, payload)
 
 
 def save_forecast_npz(path: str | Path, fc: ForecastResult) -> None:
     p = Path(path)
     payload: dict[str, Any] = {
-        "variables": np.asarray(fc.variables, dtype=object),
+        _FORMAT_VERSION_KEY: np.asarray(_FORMAT_VERSION, dtype=np.int64),
+        _ARTIFACT_KIND_KEY: np.asarray("forecast", dtype=str),
+        "variables": np.asarray(fc.variables, dtype=str),
         "horizons": np.asarray(fc.horizons, dtype=int),
         "draws": fc.draws,
         "mean": fc.mean,
-        "latent_draws": fc.latent_draws,
     }
+    _add_optional(payload, "latent_draws", fc.latent_draws)
     payload.update({f"q_{q}": arr for q, arr in fc.quantiles.items()})
-    np.savez_compressed(p, allow_pickle=True, **payload)
+    _save_safe_npz(p, payload)
 
 
-def _optional_npz_array(npz: Any, key: str) -> np.ndarray | None:
+def _optional_npz_array(npz: NpzFile, key: str, path: Path) -> np.ndarray | None:
     if key not in npz:
         return None
-    arr = npz[key]
+    arr = _load_npz_array(npz, key, path)
     if (
         isinstance(arr, np.ndarray)
         and arr.shape == ()
@@ -96,15 +207,26 @@ class FitNPZ:
     mu_gamma_draws: np.ndarray | None
 
 
-def load_fit_npz(path: str | Path) -> FitNPZ:
+def load_fit_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> FitNPZ:
+    """Load a fit artifact.
+
+    Parameters
+    ----------
+    path:
+        Path to a fit NPZ artifact.
+    allow_legacy_pickle:
+        Set only for pre-migration artifacts from a trusted source. This may execute pickle code.
+    """
     p = Path(path)
-    with np.load(p, allow_pickle=True) as npz:
-        variables = [str(v) for v in np.asarray(npz["variables"], dtype=object).tolist()]
-        time_index = pd.DatetimeIndex(pd.to_datetime(npz["time_index"]))
-        values = np.asarray(npz["values"], dtype=float)
+    with _open_artifact_npz(p, expected_kind="fit", allow_legacy_pickle=allow_legacy_pickle) as npz:
+        variables = [
+            str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
+        ]
+        time_index = pd.DatetimeIndex(pd.to_datetime(_load_npz_array(npz, "time_index", p)))
+        values = np.asarray(_load_npz_array(npz, "values", p), dtype=float)
         ds = Dataset.from_arrays(values=values, variables=variables, time_index=time_index)
 
-        latent_values = _optional_npz_array(npz, "latent_values")
+        latent_values = _optional_npz_array(npz, "latent_values", p)
         latent_dataset = None
         if latent_values is not None:
             latent_dataset = Dataset.from_arrays(
@@ -113,12 +235,14 @@ def load_fit_npz(path: str | Path) -> FitNPZ:
                 time_index=time_index,
             )
 
-        mn = _optional_npz_array(npz, "posterior_mn")
-        vn = _optional_npz_array(npz, "posterior_vn")
-        sn = _optional_npz_array(npz, "posterior_sn")
-        nun = _optional_npz_array(npz, "posterior_nun")
+        mn = _optional_npz_array(npz, "posterior_mn", p)
+        vn = _optional_npz_array(npz, "posterior_vn", p)
+        sn = _optional_npz_array(npz, "posterior_sn", p)
+        nun = _optional_npz_array(npz, "posterior_nun", p)
         posterior_parts = (mn, vn, sn, nun)
-        if any(p is not None for p in posterior_parts) and not all(p is not None for p in posterior_parts):
+        if any(p is not None for p in posterior_parts) and not all(
+            p is not None for p in posterior_parts
+        ):
             raise ValueError(
                 "fit_result.npz contains a partial posterior_* block; expected all of "
                 "posterior_mn/posterior_vn/posterior_sn/posterior_nun or none"
@@ -136,35 +260,50 @@ def load_fit_npz(path: str | Path) -> FitNPZ:
         return FitNPZ(
             dataset=ds,
             posterior=posterior,
-            beta_draws=_optional_npz_array(npz, "beta_draws"),
-            sigma_draws=_optional_npz_array(npz, "sigma_draws"),
-            q_draws=_optional_npz_array(npz, "q_draws"),
+            beta_draws=_optional_npz_array(npz, "beta_draws", p),
+            sigma_draws=_optional_npz_array(npz, "sigma_draws", p),
+            q_draws=_optional_npz_array(npz, "q_draws", p),
             latent_dataset=latent_dataset,
-            latent_draws=_optional_npz_array(npz, "latent_draws"),
-            h_draws=_optional_npz_array(npz, "h_draws"),
-            h0_draws=_optional_npz_array(npz, "h0_draws"),
-            sigma_eta2_draws=_optional_npz_array(npz, "sigma_eta2_draws"),
-            sv_gamma0_draws=_optional_npz_array(npz, "sv_gamma0_draws"),
-            sv_phi_draws=_optional_npz_array(npz, "sv_phi_draws"),
-            lambda_draws=_optional_npz_array(npz, "lambda_draws"),
-            factor_draws=_optional_npz_array(npz, "factor_draws"),
-            h_factor_draws=_optional_npz_array(npz, "h_factor_draws"),
-            h0_factor_draws=_optional_npz_array(npz, "h0_factor_draws"),
-            sigma_eta2_factor_draws=_optional_npz_array(npz, "sigma_eta2_factor_draws"),
-            gamma_draws=_optional_npz_array(npz, "gamma_draws"),
-            mu_draws=_optional_npz_array(npz, "mu_draws"),
-            mu_gamma_draws=_optional_npz_array(npz, "mu_gamma_draws"),
+            latent_draws=_optional_npz_array(npz, "latent_draws", p),
+            h_draws=_optional_npz_array(npz, "h_draws", p),
+            h0_draws=_optional_npz_array(npz, "h0_draws", p),
+            sigma_eta2_draws=_optional_npz_array(npz, "sigma_eta2_draws", p),
+            sv_gamma0_draws=_optional_npz_array(npz, "sv_gamma0_draws", p),
+            sv_phi_draws=_optional_npz_array(npz, "sv_phi_draws", p),
+            lambda_draws=_optional_npz_array(npz, "lambda_draws", p),
+            factor_draws=_optional_npz_array(npz, "factor_draws", p),
+            h_factor_draws=_optional_npz_array(npz, "h_factor_draws", p),
+            h0_factor_draws=_optional_npz_array(npz, "h0_factor_draws", p),
+            sigma_eta2_factor_draws=_optional_npz_array(npz, "sigma_eta2_factor_draws", p),
+            gamma_draws=_optional_npz_array(npz, "gamma_draws", p),
+            mu_draws=_optional_npz_array(npz, "mu_draws", p),
+            mu_gamma_draws=_optional_npz_array(npz, "mu_gamma_draws", p),
         )
 
 
-def load_forecast_npz(path: str | Path) -> ForecastResult:
+def load_forecast_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> ForecastResult:
+    """Load a forecast artifact.
+
+    Parameters
+    ----------
+    path:
+        Path to a forecast NPZ artifact.
+    allow_legacy_pickle:
+        Set only for pre-migration artifacts from a trusted source. This may execute pickle code.
+    """
     p = Path(path)
-    with np.load(p, allow_pickle=True) as npz:
-        variables = [str(v) for v in np.asarray(npz["variables"], dtype=object).tolist()]
-        horizons = [int(h) for h in np.asarray(npz["horizons"], dtype=int).tolist()]
-        draws = np.asarray(npz["draws"], dtype=float)
-        mean = np.asarray(npz["mean"], dtype=float)
-        latent_draws = _optional_npz_array(npz, "latent_draws")
+    with _open_artifact_npz(
+        p, expected_kind="forecast", allow_legacy_pickle=allow_legacy_pickle
+    ) as npz:
+        variables = [
+            str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
+        ]
+        horizons = [
+            int(h) for h in np.asarray(_load_npz_array(npz, "horizons", p), dtype=int).tolist()
+        ]
+        draws = np.asarray(_load_npz_array(npz, "draws", p), dtype=float)
+        mean = np.asarray(_load_npz_array(npz, "mean", p), dtype=float)
+        latent_draws = _optional_npz_array(npz, "latent_draws", p)
         latent = None if latent_draws is None else np.asarray(latent_draws, dtype=float)
 
         quantiles: dict[float, np.ndarray] = {}
@@ -175,7 +314,7 @@ def load_forecast_npz(path: str | Path) -> ForecastResult:
                 q = float(key[2:])
             except ValueError:
                 continue
-            quantiles[q] = np.asarray(npz[key], dtype=float)
+            quantiles[q] = np.asarray(_load_npz_array(npz, key, p), dtype=float)
 
         return ForecastResult(
             variables=variables,
@@ -192,6 +331,7 @@ def load_run_dir(
     *,
     config_filename: str = "config.yml",
     fit_filename: str = "fit_result.npz",
+    allow_legacy_pickle: bool = False,
 ) -> FitResult:
     """Load a :class:`~srvar.results.FitResult` from a `srvar run` output directory.
 
@@ -206,6 +346,8 @@ def load_run_dir(
     - The returned object is suitable for downstream analysis (IRFs/FEVD/HD) and forecasting.
     - If the saved config and saved dataset are inconsistent (e.g., variable list changed),
       config parsing may fail.
+    - Set ``allow_legacy_pickle=True`` only for a trusted pre-migration artifact; it may execute
+      pickle code.
     """
     out = Path(out_dir)
     cfg_path = out / str(config_filename)
@@ -219,7 +361,7 @@ def load_run_dir(
     from .config import build_model, build_prior, build_sampler, load_config
 
     cfg = load_config(cfg_path)
-    fit_npz = load_fit_npz(fit_path)
+    fit_npz = load_fit_npz(fit_path, allow_legacy_pickle=allow_legacy_pickle)
 
     ds = fit_npz.dataset
     model = build_model(cfg, dataset=ds)

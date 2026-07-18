@@ -72,15 +72,24 @@ def main() -> None:
         default=None,
         help="Optional path for long-format draw detail Markdown output",
     )
+    ap.add_argument(
+        "--allow-legacy-pickle",
+        action="store_true",
+        help="Trusted artifacts only; this can execute pickle code.",
+    )
     args = ap.parse_args()
 
     baseline_dir = Path(args.baseline_run_dir)
     default_root = baseline_dir.parent
     out_csv = (
-        Path(args.out_csv) if args.out_csv is not None else default_root / "fit_coefficient_summary.csv"
+        Path(args.out_csv)
+        if args.out_csv is not None
+        else default_root / "fit_coefficient_summary.csv"
     )
     out_md = (
-        Path(args.out_md) if args.out_md is not None else default_root / "fit_coefficient_summary.md"
+        Path(args.out_md)
+        if args.out_md is not None
+        else default_root / "fit_coefficient_summary.md"
     )
 
     detail = build_fit_coefficient_detail(
@@ -89,6 +98,7 @@ def main() -> None:
         variables=args.variables,
         regressors=args.regressors,
         cases=args.cases,
+        allow_legacy_pickle=args.allow_legacy_pickle,
     )
     summary = summarize_fit_coefficient_detail(detail)
 

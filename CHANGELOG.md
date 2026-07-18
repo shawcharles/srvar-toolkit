@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Security
+
+- Fit and forecast artifact writers now emit a schema-marked format without object arrays.
+  Artifact readers reject pre-migration pickle-backed output by default; reopening a trusted old
+  artifact requires the explicit `allow_legacy_pickle=True` API option or
+  `--allow-legacy-pickle` comparison-script flag.
+
 ## [0.3.0] - 2026-04-06
 
 ### Added

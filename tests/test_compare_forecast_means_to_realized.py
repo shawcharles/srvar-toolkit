@@ -63,16 +63,28 @@ output:
     )
 
 
-def _write_forecast(path, values) -> None:
+def _write_forecast(path, values, *, legacy: bool = False) -> None:
     draws = np.asarray(values, dtype=float).reshape(4, 2, 1)
+    mean = np.mean(draws, axis=0)
+    quantiles = {0.1: np.quantile(draws, 0.1, axis=0), 0.9: np.quantile(draws, 0.9, axis=0)}
+    if legacy:
+        np.savez_compressed(
+            path,
+            variables=np.asarray(["y"], dtype=object),
+            horizons=np.asarray([1, 2], dtype=int),
+            draws=draws,
+            mean=mean,
+            **{f"q_{q}": quantile for q, quantile in quantiles.items()},
+        )
+        return
     save_forecast_npz(
         path,
         ForecastResult(
             variables=["y"],
             horizons=[1, 2],
             draws=draws,
-            mean=np.mean(draws, axis=0),
-            quantiles={0.1: np.quantile(draws, 0.1, axis=0), 0.9: np.quantile(draws, 0.9, axis=0)},
+            mean=mean,
+            quantiles=quantiles,
         ),
     )
 
@@ -93,8 +105,12 @@ def test_compare_forecast_means_to_realized_script_writes_outputs(tmp_path) -> N
     _write_config(baseline_dir / "config.yml", csv_path)
     _write_config(candidate_dir / "config.yml", csv_path)
 
-    _write_forecast(baseline_dir / "forecasts" / "origin_0002.npz", [3.5, 4.5, 3.5, 4.5, 3.5, 4.5, 3.5, 4.5])
-    _write_forecast(candidate_dir / "forecasts" / "origin_0002.npz", [4.0, 5.0, 4.0, 5.0, 4.0, 5.0, 4.0, 5.0])
+    _write_forecast(
+        baseline_dir / "forecasts" / "origin_0002.npz", [3.5, 4.5, 3.5, 4.5, 3.5, 4.5, 3.5, 4.5]
+    )
+    _write_forecast(
+        candidate_dir / "forecasts" / "origin_0002.npz", [4.0, 5.0, 4.0, 5.0, 4.0, 5.0, 4.0, 5.0]
+    )
 
     out_csv = tmp_path / "forecast_mean_summary.csv"
     out_md = tmp_path / "forecast_mean_summary.md"
@@ -177,3 +193,44 @@ def test_compare_forecast_means_to_realized_cases_filter_and_detail_outputs(tmp_
     detail = pd.read_csv(out_detail_csv)
     assert list(summary["horizon"]) == [2]
     assert set(detail["horizon"]) == {2}
+
+
+def test_compare_forecast_means_legacy_flag_is_explicit(tmp_path) -> None:
+    csv_path = tmp_path / "data.csv"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2000-01-01", periods=6, freq="QS"),
+            "y": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    ).to_csv(csv_path, index=False)
+    baseline_dir = tmp_path / "baseline"
+    candidate_dir = tmp_path / "candidate"
+    (baseline_dir / "forecasts").mkdir(parents=True)
+    (candidate_dir / "forecasts").mkdir(parents=True)
+    _write_config(baseline_dir / "config.yml", csv_path)
+    _write_config(candidate_dir / "config.yml", csv_path)
+    _write_forecast(
+        baseline_dir / "forecasts" / "origin_0002.npz",
+        [3.5, 4.5, 3.5, 4.5, 3.5, 4.5, 3.5, 4.5],
+        legacy=True,
+    )
+    _write_forecast(
+        candidate_dir / "forecasts" / "origin_0002.npz",
+        [4.0, 5.0, 4.0, 5.0, 4.0, 5.0, 4.0, 5.0],
+        legacy=True,
+    )
+
+    command = [
+        sys.executable,
+        "scripts/compare_forecast_means_to_realized.py",
+        str(baseline_dir),
+        str(candidate_dir),
+    ]
+    rejected = subprocess.run(command, capture_output=True, text=True)
+    assert rejected.returncode != 0
+    assert "legacy pickle-backed" in rejected.stderr
+
+    completed = subprocess.run(
+        [*command, "--allow-legacy-pickle"], check=True, capture_output=True, text=True
+    )
+    assert "wrote_csv=" in completed.stdout
