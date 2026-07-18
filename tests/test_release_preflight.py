@@ -55,7 +55,7 @@ def test_valid_release_tree_passes(tmp_path: Path) -> None:
 
 
 def test_checkout_current_release_metadata_passes() -> None:
-    result = release_preflight.validate_release(REPO_ROOT, "v0.3.0")
+    result = release_preflight.validate_release(REPO_ROOT, "v0.3.1")
 
     assert result.ok
 

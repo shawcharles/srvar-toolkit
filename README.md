@@ -159,8 +159,8 @@ source .venv/bin/activate
 
 python -m pip install -U pip
 
-# Install from this repo (CLI + FRED fetch)
-python -m pip install -e ".[cli,fred]"
+# Normal user install from PyPI (CLI + FRED fetch)
+python -m pip install "srvar-toolkit[cli,fred]"
 ```
 
 For development (tests + docs + plotting):
@@ -171,7 +171,35 @@ python -m pip install -e ".[dev,cli,fred,docs,plot]"
 
 ### Installation
 
-#### Option 1: Editable Install (recommended for development)
+#### Option 1: PyPI install (recommended for users)
+
+```bash
+pip install srvar-toolkit
+```
+
+#### Option 2: PyPI install with extras
+
+```bash
+# With CLI commands
+pip install 'srvar-toolkit[cli]'
+
+# With plotting support
+pip install 'srvar-toolkit[plot]'
+
+# With labeled xarray outputs
+pip install 'srvar-toolkit[xarray]'
+
+# With ArviZ integration (InferenceData outputs)
+pip install 'srvar-toolkit[arviz]'
+
+# With FRED data fetching
+pip install 'srvar-toolkit[fred]'
+
+# CLI plus FRED fetching
+pip install 'srvar-toolkit[cli,fred]'
+```
+
+#### Option 3: Editable install (recommended for development)
 
 ```bash
 git clone https://github.com/shawcharles/srvar-toolkit.git
@@ -179,7 +207,7 @@ cd srvar-toolkit
 pip install -e .
 ```
 
-#### Option 2: Install with Extras
+#### Option 4: Editable install with extras
 
 ```bash
 # With plotting support
@@ -201,9 +229,9 @@ pip install -e '.[dev]'
 pip install -e '.[dev,plot,fred,docs,xarray,arviz]'
 ```
 
-Note: `srvar fetch-fred` requires the optional `fred` extra (it depends on `fredapi`).
+Note: `srvar fetch-fred` requires the optional `fred` extra.
 
-If you see a warning like `srvar-toolkit ... does not provide the extra 'fred'`, you are likely installing a different distribution than this repository. From the repository root, prefer:
+If you are working from a local checkout and see a warning like `srvar-toolkit ... does not provide the extra 'fred'`, make sure you are installing from the repository root:
 
 ```bash
 python -m pip install -e ".[fred]"
@@ -574,7 +602,7 @@ If you use **srvar-toolkit** in your research, please cite both the software and
   title        = {srvar-toolkit: Shadow-Rate VAR Toolkit for Python},
   year         = {2026},
   url          = {https://github.com/shawcharles/srvar-toolkit},
-  version      = {0.3.0}
+  version      = {0.3.1}
 }
 ```
 

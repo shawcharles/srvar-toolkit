@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "srvar-toolkit"
-version = "0.3.0"
+version = "0.3.1"
 description = "SRVAR toolkit inspired by Grammatikopoulos (2025)"
 readme = "README.md"
 requires-python = ">=3.11"

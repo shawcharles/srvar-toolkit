@@ -6,6 +6,17 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-18
+
+### Added
+
+- Controlled GitHub release workflow for tag-validated build artifacts and manual PyPI
+  publication.
+- Local release preflight checks for tag format, metadata synchronisation, and changelog release
+  headings.
+- Trusted-publishing documentation covering PyPI project setup, GitHub environment protection, and
+  release verification.
+
 ### Security
 
 - Fit and forecast artifact writers now emit a schema-marked format without object arrays.
