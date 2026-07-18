@@ -41,6 +41,20 @@ and is used only to bound work before NumPy access: parsing the ZIP directory an
 allocation inconsistent with its ZIP member size. The limits reduce this exposure but cannot
 eliminate it; do not treat them as a safe way to load untrusted pickle-backed files.
 
+## Schema-v1 payload validation
+
+After schema-v1 markers and archive limits pass, loaders allow only fields emitted by the matching
+writer and validate stored dtype families, ranks, duplicate member names, and cross-field shapes
+before creating result objects. Fit artifacts must have consistent variable, time, draw,
+coefficient, and factor dimensions; forecast artifacts must have consistent variable, horizon,
+and draw dimensions. Forecast quantile fields use the writer's canonical `q_<float>` spelling and
+must be finite levels strictly between zero and one.
+
+This is deliberately a strict schema-v1 rule. A future field requires a format-version change;
+unknown or malformed v1 fields are rejected rather than silently ignored. Explicitly trusted,
+markerless legacy artifacts retain their compatibility path and are not represented as validated
+v1 data. The archive and `.npy` parsing residual risks described above still apply.
+
 ```{eval-rst}
 .. automodule:: srvar.artifacts
    :members:

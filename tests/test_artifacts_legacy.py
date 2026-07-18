@@ -118,7 +118,7 @@ def test_marked_invalid_artifacts_do_not_use_legacy_opt_in(tmp_path: Path, loade
         artifact_kind=np.asarray("fit" if loader is load_fit_npz else "forecast", dtype=str),
         variables=np.asarray(["y"], dtype=object),
     )
-    with pytest.raises(ValueError, match="object dtype"):
+    with pytest.raises(ValueError, match="missing required v1 field"):
         loader(object_payload, allow_legacy_pickle=True)
 
 

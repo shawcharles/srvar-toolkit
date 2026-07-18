@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import math
 import os
+import re
 import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,6 +23,42 @@ from .results import FitResult, ForecastResult, PosteriorNIW
 _FORMAT_VERSION = 1
 _FORMAT_VERSION_KEY = "format_version"
 _ARTIFACT_KIND_KEY = "artifact_kind"
+_REAL_NUMERIC_KINDS = {"i", "u", "f"}
+_INDICATOR_NUMERIC_KINDS = _REAL_NUMERIC_KINDS | {"b"}
+_FIT_REQUIRED_FIELDS = frozenset(
+    {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY, "variables", "time_index", "values"}
+)
+_FIT_OPTIONAL_FIELDS = frozenset(
+    {
+        "beta_draws",
+        "sigma_draws",
+        "q_draws",
+        "latent_values",
+        "latent_draws",
+        "posterior_mn",
+        "posterior_vn",
+        "posterior_sn",
+        "posterior_nun",
+        "h_draws",
+        "h0_draws",
+        "sigma_eta2_draws",
+        "sv_gamma0_draws",
+        "sv_phi_draws",
+        "lambda_draws",
+        "factor_draws",
+        "h_factor_draws",
+        "h0_factor_draws",
+        "sigma_eta2_factor_draws",
+        "gamma_draws",
+        "mu_draws",
+        "mu_gamma_draws",
+    }
+)
+_FORECAST_REQUIRED_FIELDS = frozenset(
+    {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY, "variables", "horizons", "draws", "mean"}
+)
+_FORECAST_OPTIONAL_FIELDS = frozenset({"latent_draws"})
+_QUANTILE_KEY_RE = re.compile(r"^q_([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +223,7 @@ def _validate_marker(npz: NpzFile, path: Path, *, expected_kind: str) -> None:
             path, "format_version must be a zero-dimensional signed or unsigned integer"
         )
     if format_version.item() != _FORMAT_VERSION:
-        raise _artifact_format_error(path, f"unsupported format_version {format_version.item()!r}")
+        raise _artifact_format_error(path, "unsupported format_version")
 
     artifact_kind = _load_npz_array(npz, _ARTIFACT_KIND_KEY, path)
     if artifact_kind.shape != () or artifact_kind.dtype.kind != "U":
@@ -194,10 +231,286 @@ def _validate_marker(npz: NpzFile, path: Path, *, expected_kind: str) -> None:
             path, "artifact_kind must be a zero-dimensional Unicode string"
         )
     if artifact_kind.item() != expected_kind:
-        raise _artifact_format_error(
-            path,
-            f"artifact_kind must be {expected_kind!r}, got {artifact_kind.item()!r}",
+        raise _artifact_format_error(path, f"artifact_kind must be {expected_kind!r}")
+
+
+def _schema_error(path: Path, field: str, detail: str) -> ValueError:
+    return _artifact_format_error(path, f"field {field!r} {detail}")
+
+
+def _require_dtype_rank(
+    arr: np.ndarray,
+    path: Path,
+    field: str,
+    *,
+    dtype_kinds: set[str],
+    ndim: int,
+) -> None:
+    if arr.dtype.kind not in dtype_kinds:
+        raise _schema_error(path, field, "has an unsupported dtype")
+    if arr.ndim != ndim:
+        raise _schema_error(path, field, f"must be {ndim}-dimensional")
+
+
+def _require_shape(arr: np.ndarray, path: Path, field: str, shape: tuple[int, ...]) -> None:
+    if arr.shape != shape:
+        raise _schema_error(path, field, "has incompatible shape")
+
+
+def _validate_unique_time_index(time_index: np.ndarray, path: Path) -> None:
+    if np.unique(time_index).size != time_index.size:
+        raise _schema_error(path, "time_index", "must not contain duplicate timestamps")
+
+
+def _validate_v1_field_set(
+    npz: NpzFile,
+    path: Path,
+    *,
+    required_fields: frozenset[str],
+    optional_fields: frozenset[str],
+) -> set[str]:
+    fields = set(npz.files)
+    if required_fields - fields:
+        raise _artifact_format_error(path, "missing required v1 field")
+    if fields - required_fields - optional_fields:
+        raise _artifact_format_error(path, "unknown v1 field")
+    return fields
+
+
+def _load_v1_arrays(npz: NpzFile, path: Path, fields: set[str]) -> dict[str, np.ndarray]:
+    return {
+        field: _load_npz_array(npz, field, path)
+        for field in fields
+        if field not in {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY}
+    }
+
+
+def _validate_fit_v1_payload(npz: NpzFile, path: Path) -> dict[str, np.ndarray]:
+    fields = _validate_v1_field_set(
+        npz,
+        path,
+        required_fields=_FIT_REQUIRED_FIELDS,
+        optional_fields=_FIT_OPTIONAL_FIELDS,
+    )
+    arrays = _load_v1_arrays(npz, path, fields)
+
+    variables = arrays["variables"]
+    _require_dtype_rank(variables, path, "variables", dtype_kinds={"U"}, ndim=1)
+    n = variables.shape[0]
+    time_index = arrays["time_index"]
+    _require_dtype_rank(time_index, path, "time_index", dtype_kinds={"M"}, ndim=1)
+    _validate_unique_time_index(time_index, path)
+    t = time_index.shape[0]
+    values = arrays["values"]
+    _require_dtype_rank(values, path, "values", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+    _require_shape(values, path, "values", (t, n))
+
+    def optional(name: str) -> np.ndarray | None:
+        return arrays.get(name)
+
+    latent_values = optional("latent_values")
+    if latent_values is not None:
+        _require_dtype_rank(
+            latent_values, path, "latent_values", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2
         )
+        _require_shape(latent_values, path, "latent_values", (t, n))
+
+    draw_count: int | None = None
+    coefficient_width: int | None = None
+    factor_width: int | None = None
+    state_time: int | None = None
+
+    def require_draw_count(arr: np.ndarray, field: str) -> None:
+        nonlocal draw_count
+        if draw_count is None:
+            draw_count = arr.shape[0]
+        elif arr.shape[0] != draw_count:
+            raise _schema_error(path, field, "has an incompatible draw count")
+
+    def require_coefficient_width(width: int, field: str) -> None:
+        nonlocal coefficient_width
+        if coefficient_width is None:
+            coefficient_width = width
+        elif width != coefficient_width:
+            raise _schema_error(path, field, "has an incompatible coefficient width")
+
+    def require_factor_width(width: int, field: str) -> None:
+        nonlocal factor_width
+        if factor_width is None:
+            factor_width = width
+        elif width != factor_width:
+            raise _schema_error(path, field, "has an incompatible factor width")
+
+    def require_state_time(length: int, field: str) -> None:
+        nonlocal state_time
+        if state_time is None:
+            state_time = length
+        elif length != state_time:
+            raise _schema_error(path, field, "has an incompatible state-time length")
+
+    latent_draws = optional("latent_draws")
+    if latent_draws is not None:
+        _require_dtype_rank(
+            latent_draws, path, "latent_draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3
+        )
+        require_draw_count(latent_draws, "latent_draws")
+        _require_shape(latent_draws, path, "latent_draws", (latent_draws.shape[0], t, n))
+
+    beta_draws = optional("beta_draws")
+    if beta_draws is not None:
+        _require_dtype_rank(beta_draws, path, "beta_draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3)
+        require_draw_count(beta_draws, "beta_draws")
+        if beta_draws.shape[2] != n:
+            raise _schema_error(path, "beta_draws", "has an incompatible variable dimension")
+        require_coefficient_width(beta_draws.shape[1], "beta_draws")
+
+    for field in ("sigma_draws", "q_draws"):
+        arr = optional(field)
+        if arr is None:
+            continue
+        _require_dtype_rank(arr, path, field, dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3)
+        require_draw_count(arr, field)
+        _require_shape(arr, path, field, (arr.shape[0], n, n))
+
+    posterior_fields = ("posterior_mn", "posterior_vn", "posterior_sn", "posterior_nun")
+    present_posterior_fields = [field for field in posterior_fields if optional(field) is not None]
+    if present_posterior_fields and len(present_posterior_fields) != len(posterior_fields):
+        raise _artifact_format_error(path, "partial posterior_* block")
+    if present_posterior_fields:
+        mn = arrays["posterior_mn"]
+        vn = arrays["posterior_vn"]
+        sn = arrays["posterior_sn"]
+        nun = arrays["posterior_nun"]
+        _require_dtype_rank(mn, path, "posterior_mn", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        if mn.shape[1] != n:
+            raise _schema_error(path, "posterior_mn", "has an incompatible variable dimension")
+        require_coefficient_width(mn.shape[0], "posterior_mn")
+        _require_dtype_rank(vn, path, "posterior_vn", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        _require_shape(vn, path, "posterior_vn", (mn.shape[0], mn.shape[0]))
+        _require_dtype_rank(sn, path, "posterior_sn", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        _require_shape(sn, path, "posterior_sn", (n, n))
+        _require_dtype_rank(nun, path, "posterior_nun", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=0)
+
+    h_draws = optional("h_draws")
+    if h_draws is not None:
+        _require_dtype_rank(h_draws, path, "h_draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3)
+        require_draw_count(h_draws, "h_draws")
+        if h_draws.shape[2] != n:
+            raise _schema_error(path, "h_draws", "has an incompatible variable dimension")
+        require_state_time(h_draws.shape[1], "h_draws")
+
+    for field in (
+        "h0_draws",
+        "sigma_eta2_draws",
+        "sv_gamma0_draws",
+        "sv_phi_draws",
+        "mu_draws",
+        "mu_gamma_draws",
+    ):
+        arr = optional(field)
+        if arr is None:
+            continue
+        _require_dtype_rank(arr, path, field, dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        require_draw_count(arr, field)
+        _require_shape(arr, path, field, (arr.shape[0], n))
+
+    lambda_draws = optional("lambda_draws")
+    if lambda_draws is not None:
+        _require_dtype_rank(
+            lambda_draws, path, "lambda_draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3
+        )
+        require_draw_count(lambda_draws, "lambda_draws")
+        if lambda_draws.shape[1] != n:
+            raise _schema_error(path, "lambda_draws", "has an incompatible variable dimension")
+        require_factor_width(lambda_draws.shape[2], "lambda_draws")
+
+    for field in ("factor_draws", "h_factor_draws"):
+        arr = optional(field)
+        if arr is None:
+            continue
+        _require_dtype_rank(arr, path, field, dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3)
+        require_draw_count(arr, field)
+        require_state_time(arr.shape[1], field)
+        require_factor_width(arr.shape[2], field)
+
+    for field in ("h0_factor_draws", "sigma_eta2_factor_draws"):
+        arr = optional(field)
+        if arr is None:
+            continue
+        _require_dtype_rank(arr, path, field, dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        require_draw_count(arr, field)
+        require_factor_width(arr.shape[1], field)
+
+    gamma_draws = optional("gamma_draws")
+    if gamma_draws is not None:
+        _require_dtype_rank(
+            gamma_draws,
+            path,
+            "gamma_draws",
+            dtype_kinds=_INDICATOR_NUMERIC_KINDS,
+            ndim=2,
+        )
+        require_draw_count(gamma_draws, "gamma_draws")
+        require_coefficient_width(gamma_draws.shape[1], "gamma_draws")
+
+    return arrays
+
+
+def _validate_forecast_v1_payload(
+    npz: NpzFile, path: Path
+) -> tuple[dict[str, np.ndarray], list[tuple[float, str]]]:
+    fields = set(npz.files)
+    if _FORECAST_REQUIRED_FIELDS - fields:
+        raise _artifact_format_error(path, "missing required v1 field")
+    quantiles: list[tuple[float, str]] = []
+    quantile_levels: set[float] = set()
+    for field in npz.files:
+        if field in _FORECAST_REQUIRED_FIELDS | _FORECAST_OPTIONAL_FIELDS:
+            continue
+        match = _QUANTILE_KEY_RE.fullmatch(field)
+        if match is None:
+            detail = (
+                "malformed forecast quantile field"
+                if field.startswith("q_")
+                else "unknown v1 field"
+            )
+            raise _artifact_format_error(path, detail)
+        suffix = match.group(1)
+        quantile = float(suffix)
+        if not math.isfinite(quantile) or not 0 < quantile < 1 or suffix != str(quantile):
+            raise _artifact_format_error(path, "malformed forecast quantile field")
+        if quantile in quantile_levels:
+            raise _artifact_format_error(path, "duplicate forecast quantile field")
+        quantile_levels.add(quantile)
+        quantiles.append((quantile, field))
+
+    arrays = _load_v1_arrays(npz, path, fields)
+    variables = arrays["variables"]
+    _require_dtype_rank(variables, path, "variables", dtype_kinds={"U"}, ndim=1)
+    n = variables.shape[0]
+    horizons = arrays["horizons"]
+    _require_dtype_rank(horizons, path, "horizons", dtype_kinds={"i", "u"}, ndim=1)
+    h = horizons.shape[0]
+    draws = arrays["draws"]
+    _require_dtype_rank(draws, path, "draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3)
+    d = draws.shape[0]
+    _require_shape(draws, path, "draws", (d, h, n))
+    mean = arrays["mean"]
+    _require_dtype_rank(mean, path, "mean", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+    _require_shape(mean, path, "mean", (h, n))
+
+    latent_draws = arrays.get("latent_draws")
+    if latent_draws is not None:
+        _require_dtype_rank(
+            latent_draws, path, "latent_draws", dtype_kinds=_REAL_NUMERIC_KINDS, ndim=3
+        )
+        _require_shape(latent_draws, path, "latent_draws", (d, h, n))
+    for _, field in quantiles:
+        arr = arrays[field]
+        _require_dtype_rank(arr, path, field, dtype_kinds=_REAL_NUMERIC_KINDS, ndim=2)
+        _require_shape(arr, path, field, (h, n))
+
+    return arrays, quantiles
 
 
 @contextmanager
@@ -207,7 +520,7 @@ def _open_artifact_npz(
     expected_kind: str,
     allow_legacy_pickle: bool,
     limits: ArtifactLoadLimits | None,
-) -> Iterator[NpzFile]:
+) -> Iterator[tuple[NpzFile, bool]]:
     resolved_limits = _resolve_load_limits(limits)
     with _open_regular_artifact(path) as (handle, file_status):
         _preflight_npz_metadata(
@@ -235,16 +548,18 @@ def _open_artifact_npz(
             if not isinstance(legacy_loaded, NpzFile):
                 raise _artifact_format_error(path, "expected an NPZ archive")
             try:
-                yield legacy_loaded
+                yield legacy_loaded, False
             finally:
                 legacy_loaded.close()
             return
 
         try:
+            if len(strict_loaded.files) != len(set(strict_loaded.files)):
+                raise _artifact_format_error(path, "duplicate v1 field")
             if present_markers != marker_keys:
                 raise _artifact_format_error(path, "incomplete format markers")
             _validate_marker(strict_loaded, path, expected_kind=expected_kind)
-            yield strict_loaded
+            yield strict_loaded, True
         finally:
             strict_loaded.close()
 
@@ -342,6 +657,54 @@ class FitNPZ:
     mu_gamma_draws: np.ndarray | None
 
 
+def _fit_npz_from_v1_payload(payload: dict[str, np.ndarray]) -> FitNPZ:
+    variables = [str(value) for value in payload["variables"].tolist()]
+    time_index = pd.DatetimeIndex(pd.to_datetime(payload["time_index"]))
+    values = np.asarray(payload["values"], dtype=float)
+    ds = Dataset.from_arrays(values=values, variables=variables, time_index=time_index)
+
+    latent_values = payload.get("latent_values")
+    latent_dataset = None
+    if latent_values is not None:
+        latent_dataset = Dataset.from_arrays(
+            values=np.asarray(latent_values, dtype=float),
+            variables=variables,
+            time_index=time_index,
+        )
+
+    posterior = None
+    if "posterior_mn" in payload:
+        posterior = PosteriorNIW(
+            mn=np.asarray(payload["posterior_mn"], dtype=float),
+            vn=np.asarray(payload["posterior_vn"], dtype=float),
+            sn=np.asarray(payload["posterior_sn"], dtype=float),
+            nun=float(np.asarray(payload["posterior_nun"], dtype=float)),
+        )
+
+    return FitNPZ(
+        dataset=ds,
+        posterior=posterior,
+        beta_draws=payload.get("beta_draws"),
+        sigma_draws=payload.get("sigma_draws"),
+        q_draws=payload.get("q_draws"),
+        latent_dataset=latent_dataset,
+        latent_draws=payload.get("latent_draws"),
+        h_draws=payload.get("h_draws"),
+        h0_draws=payload.get("h0_draws"),
+        sigma_eta2_draws=payload.get("sigma_eta2_draws"),
+        sv_gamma0_draws=payload.get("sv_gamma0_draws"),
+        sv_phi_draws=payload.get("sv_phi_draws"),
+        lambda_draws=payload.get("lambda_draws"),
+        factor_draws=payload.get("factor_draws"),
+        h_factor_draws=payload.get("h_factor_draws"),
+        h0_factor_draws=payload.get("h0_factor_draws"),
+        sigma_eta2_factor_draws=payload.get("sigma_eta2_factor_draws"),
+        gamma_draws=payload.get("gamma_draws"),
+        mu_draws=payload.get("mu_draws"),
+        mu_gamma_draws=payload.get("mu_gamma_draws"),
+    )
+
+
 def load_fit_npz(
     path: str | Path,
     *,
@@ -365,7 +728,10 @@ def load_fit_npz(
         expected_kind="fit",
         allow_legacy_pickle=allow_legacy_pickle,
         limits=limits,
-    ) as npz:
+    ) as (npz, is_v1):
+        if is_v1:
+            return _fit_npz_from_v1_payload(_validate_fit_v1_payload(npz, p))
+
         variables = [
             str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
         ]
@@ -451,7 +817,25 @@ def load_forecast_npz(
         expected_kind="forecast",
         allow_legacy_pickle=allow_legacy_pickle,
         limits=limits,
-    ) as npz:
+    ) as (npz, is_v1):
+        if is_v1:
+            payload, quantile_fields = _validate_forecast_v1_payload(npz, p)
+            return ForecastResult(
+                variables=[str(value) for value in payload["variables"].tolist()],
+                horizons=[int(horizon) for horizon in payload["horizons"].tolist()],
+                draws=np.asarray(payload["draws"], dtype=float),
+                mean=np.asarray(payload["mean"], dtype=float),
+                quantiles={
+                    quantile: np.asarray(payload[field], dtype=float)
+                    for quantile, field in quantile_fields
+                },
+                latent_draws=(
+                    None
+                    if "latent_draws" not in payload
+                    else np.asarray(payload["latent_draws"], dtype=float)
+                ),
+            )
+
         variables = [
             str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
         ]
