@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import errno
+import math
+import os
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Any
-from zipfile import BadZipFile
+from zipfile import BadZipFile, ZipFile
 
 import numpy as np
 import pandas as pd
@@ -17,6 +22,37 @@ from .results import FitResult, ForecastResult, PosteriorNIW
 _FORMAT_VERSION = 1
 _FORMAT_VERSION_KEY = "format_version"
 _ARTIFACT_KIND_KEY = "artifact_kind"
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactLoadLimits:
+    """Metadata limits applied before an NPZ artifact is opened by NumPy."""
+
+    max_archive_bytes: int = 512 * 1024 * 1024
+    max_member_count: int = 128
+    max_member_uncompressed_bytes: int = 512 * 1024 * 1024
+    max_total_uncompressed_bytes: int = 1024 * 1024 * 1024
+    max_expansion_ratio: float = 100.0
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "max_archive_bytes",
+            "max_member_count",
+            "max_member_uncompressed_bytes",
+            "max_total_uncompressed_bytes",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{field_name} must be a positive integer")
+
+        ratio = self.max_expansion_ratio
+        if (
+            isinstance(ratio, bool)
+            or not isinstance(ratio, Real)
+            or not math.isfinite(float(ratio))
+            or ratio <= 0
+        ):
+            raise ValueError("max_expansion_ratio must be a positive finite real number")
 
 
 def _add_optional(payload: dict[str, Any], key: str, value: Any) -> None:
@@ -33,6 +69,103 @@ def _save_safe_npz(path: Path, payload: dict[str, Any]) -> None:
 
 def _artifact_format_error(path: Path, detail: str) -> ValueError:
     return ValueError(f"invalid srvar artifact {path}: {detail}")
+
+
+def _resolve_load_limits(limits: ArtifactLoadLimits | None) -> ArtifactLoadLimits:
+    if limits is None:
+        return ArtifactLoadLimits()
+    if not isinstance(limits, ArtifactLoadLimits):
+        raise TypeError("limits must be an ArtifactLoadLimits instance or None")
+    return limits
+
+
+@contextmanager
+def _open_regular_artifact(path: Path) -> Iterator[tuple[Any, os.stat_result]]:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+
+    fd = os.open(os.fspath(path), flags)
+    try:
+        file_status = os.fstat(fd)
+        if stat.S_ISDIR(file_status.st_mode):
+            raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), os.fspath(path))
+        if not stat.S_ISREG(file_status.st_mode):
+            raise _artifact_format_error(path, "expected a regular file")
+
+        with os.fdopen(fd, "rb") as handle:
+            fd = -1
+            yield handle, file_status
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+def _preflight_npz_metadata(
+    handle: Any, path: Path, *, archive_bytes: int, limits: ArtifactLoadLimits
+) -> None:
+    if archive_bytes > limits.max_archive_bytes:
+        raise _artifact_format_error(
+            path,
+            f"archive size {archive_bytes} exceeds max_archive_bytes {limits.max_archive_bytes}",
+        )
+
+    try:
+        with ZipFile(handle) as archive:
+            members = archive.infolist()
+            member_count = len(members)
+            if member_count > limits.max_member_count:
+                raise _artifact_format_error(
+                    path,
+                    f"member count {member_count} exceeds max_member_count {limits.max_member_count}",
+                )
+
+            total_uncompressed = 0
+            for member in members:
+                member_size = member.file_size
+                if member_size > limits.max_member_uncompressed_bytes:
+                    raise _artifact_format_error(
+                        path,
+                        "member uncompressed size "
+                        f"{member_size} exceeds max_member_uncompressed_bytes "
+                        f"{limits.max_member_uncompressed_bytes}",
+                    )
+
+                total_uncompressed += member_size
+                if total_uncompressed > limits.max_total_uncompressed_bytes:
+                    raise _artifact_format_error(
+                        path,
+                        "total uncompressed size "
+                        f"{total_uncompressed} exceeds max_total_uncompressed_bytes "
+                        f"{limits.max_total_uncompressed_bytes}",
+                    )
+
+                if member_size:
+                    expansion_ratio = (
+                        math.inf
+                        if member.compress_size == 0
+                        else member_size / member.compress_size
+                    )
+                    if expansion_ratio > limits.max_expansion_ratio:
+                        raise _artifact_format_error(
+                            path,
+                            "expansion ratio "
+                            f"{expansion_ratio:g} exceeds max_expansion_ratio "
+                            f"{limits.max_expansion_ratio:g}",
+                        )
+    except (BadZipFile, EOFError) as exc:
+        raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
+    finally:
+        handle.seek(0)
+
+
+def _load_npz_from_handle(handle: Any, path: Path, *, allow_pickle: bool) -> NpzFile | Any:
+    try:
+        return np.load(handle, allow_pickle=allow_pickle)
+    except OSError:
+        raise
+    except (BadZipFile, EOFError, ValueError) as exc:
+        raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
 
 
 def _load_npz_array(npz: NpzFile, key: str, path: Path) -> np.ndarray:
@@ -69,49 +202,51 @@ def _validate_marker(npz: NpzFile, path: Path, *, expected_kind: str) -> None:
 
 @contextmanager
 def _open_artifact_npz(
-    path: Path, *, expected_kind: str, allow_legacy_pickle: bool
+    path: Path,
+    *,
+    expected_kind: str,
+    allow_legacy_pickle: bool,
+    limits: ArtifactLoadLimits | None,
 ) -> Iterator[NpzFile]:
-    try:
-        strict_loaded = np.load(path, allow_pickle=False)
-    except OSError:
-        raise
-    except (BadZipFile, EOFError, ValueError) as exc:
-        raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
-
-    if not isinstance(strict_loaded, NpzFile):
-        raise _artifact_format_error(path, "expected an NPZ archive")
-
-    marker_keys = {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY}
-    present_markers = marker_keys.intersection(strict_loaded.files)
-    if not present_markers:
-        strict_loaded.close()
-        if not allow_legacy_pickle:
-            raise _artifact_format_error(
-                path,
-                "legacy pickle-backed format is not loaded by default for security; "
-                "load only a trusted source with allow_legacy_pickle=True",
-            )
-        try:
-            legacy_loaded = np.load(path, allow_pickle=True)
-        except OSError:
-            raise
-        except (BadZipFile, EOFError, ValueError) as exc:
-            raise _artifact_format_error(path, "could not parse a readable NPZ archive") from exc
-        if not isinstance(legacy_loaded, NpzFile):
+    resolved_limits = _resolve_load_limits(limits)
+    with _open_regular_artifact(path) as (handle, file_status):
+        _preflight_npz_metadata(
+            handle,
+            path,
+            archive_bytes=file_status.st_size,
+            limits=resolved_limits,
+        )
+        strict_loaded = _load_npz_from_handle(handle, path, allow_pickle=False)
+        if not isinstance(strict_loaded, NpzFile):
             raise _artifact_format_error(path, "expected an NPZ archive")
-        try:
-            yield legacy_loaded
-        finally:
-            legacy_loaded.close()
-        return
 
-    try:
-        if present_markers != marker_keys:
-            raise _artifact_format_error(path, "incomplete format markers")
-        _validate_marker(strict_loaded, path, expected_kind=expected_kind)
-        yield strict_loaded
-    finally:
-        strict_loaded.close()
+        marker_keys = {_FORMAT_VERSION_KEY, _ARTIFACT_KIND_KEY}
+        present_markers = marker_keys.intersection(strict_loaded.files)
+        if not present_markers:
+            strict_loaded.close()
+            if not allow_legacy_pickle:
+                raise _artifact_format_error(
+                    path,
+                    "legacy pickle-backed format is not loaded by default for security; "
+                    "load only a trusted source with allow_legacy_pickle=True",
+                )
+            handle.seek(0)
+            legacy_loaded = _load_npz_from_handle(handle, path, allow_pickle=True)
+            if not isinstance(legacy_loaded, NpzFile):
+                raise _artifact_format_error(path, "expected an NPZ archive")
+            try:
+                yield legacy_loaded
+            finally:
+                legacy_loaded.close()
+            return
+
+        try:
+            if present_markers != marker_keys:
+                raise _artifact_format_error(path, "incomplete format markers")
+            _validate_marker(strict_loaded, path, expected_kind=expected_kind)
+            yield strict_loaded
+        finally:
+            strict_loaded.close()
 
 
 def save_fit_npz(path: str | Path, fit_res: FitResult) -> None:
@@ -207,7 +342,12 @@ class FitNPZ:
     mu_gamma_draws: np.ndarray | None
 
 
-def load_fit_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> FitNPZ:
+def load_fit_npz(
+    path: str | Path,
+    *,
+    allow_legacy_pickle: bool = False,
+    limits: ArtifactLoadLimits | None = None,
+) -> FitNPZ:
     """Load a fit artifact.
 
     Parameters
@@ -216,9 +356,16 @@ def load_fit_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> FitN
         Path to a fit NPZ artifact.
     allow_legacy_pickle:
         Set only for pre-migration artifacts from a trusted source. This may execute pickle code.
+    limits:
+        Metadata limits applied before NumPy reads the archive. ``None`` uses the defaults.
     """
     p = Path(path)
-    with _open_artifact_npz(p, expected_kind="fit", allow_legacy_pickle=allow_legacy_pickle) as npz:
+    with _open_artifact_npz(
+        p,
+        expected_kind="fit",
+        allow_legacy_pickle=allow_legacy_pickle,
+        limits=limits,
+    ) as npz:
         variables = [
             str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
         ]
@@ -281,7 +428,12 @@ def load_fit_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> FitN
         )
 
 
-def load_forecast_npz(path: str | Path, *, allow_legacy_pickle: bool = False) -> ForecastResult:
+def load_forecast_npz(
+    path: str | Path,
+    *,
+    allow_legacy_pickle: bool = False,
+    limits: ArtifactLoadLimits | None = None,
+) -> ForecastResult:
     """Load a forecast artifact.
 
     Parameters
@@ -290,10 +442,15 @@ def load_forecast_npz(path: str | Path, *, allow_legacy_pickle: bool = False) ->
         Path to a forecast NPZ artifact.
     allow_legacy_pickle:
         Set only for pre-migration artifacts from a trusted source. This may execute pickle code.
+    limits:
+        Metadata limits applied before NumPy reads the archive. ``None`` uses the defaults.
     """
     p = Path(path)
     with _open_artifact_npz(
-        p, expected_kind="forecast", allow_legacy_pickle=allow_legacy_pickle
+        p,
+        expected_kind="forecast",
+        allow_legacy_pickle=allow_legacy_pickle,
+        limits=limits,
     ) as npz:
         variables = [
             str(v) for v in np.asarray(_load_npz_array(npz, "variables", p), dtype=str).tolist()
@@ -332,6 +489,7 @@ def load_run_dir(
     config_filename: str = "config.yml",
     fit_filename: str = "fit_result.npz",
     allow_legacy_pickle: bool = False,
+    limits: ArtifactLoadLimits | None = None,
 ) -> FitResult:
     """Load a :class:`~srvar.results.FitResult` from a `srvar run` output directory.
 
@@ -348,6 +506,7 @@ def load_run_dir(
       config parsing may fail.
     - Set ``allow_legacy_pickle=True`` only for a trusted pre-migration artifact; it may execute
       pickle code.
+    - ``limits`` controls metadata limits for the stored fit artifact. ``None`` uses the defaults.
     """
     out = Path(out_dir)
     cfg_path = out / str(config_filename)
@@ -361,7 +520,12 @@ def load_run_dir(
     from .config import build_model, build_prior, build_sampler, load_config
 
     cfg = load_config(cfg_path)
-    fit_npz = load_fit_npz(fit_path, allow_legacy_pickle=allow_legacy_pickle)
+    resolved_limits = _resolve_load_limits(limits)
+    fit_npz = load_fit_npz(
+        fit_path,
+        allow_legacy_pickle=allow_legacy_pickle,
+        limits=resolved_limits,
+    )
 
     ds = fit_npz.dataset
     model = build_model(cfg, dataset=ds)
