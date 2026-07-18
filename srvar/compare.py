@@ -557,7 +557,9 @@ def run_minnesota_prior_scale_diagnostic(
     root.mkdir(parents=True, exist_ok=True)
 
     base_cfg = load_config(cfg_path)
-    ds_full, model, _prior0, _sampler, _rng, _fc_cfg = _prepare_from_config(base_cfg)
+    ds_full, model, _prior0, _sampler, _rng, _fc_cfg = _prepare_from_config(
+        base_cfg, build_full_prior=False
+    )
     bt = build_backtest_config(base_cfg, model=model)
     selected_variables = _select_variables(ds_full, variables)
     case_filter = _parse_variable_regressor_cases(cases)
@@ -590,7 +592,7 @@ def run_minnesota_prior_scale_diagnostic(
             dataset=train_ds,
             model=model,
             prior=prior_b,
-            sampler=_prepare_from_config(baseline_cfg)[3],
+            sampler=_prepare_from_config(baseline_cfg, build_full_prior=False)[3],
             posterior=None,
         ),
         regressors=regressors,
@@ -1113,9 +1115,20 @@ def run_minnesota_origin_diagnostic(
     root.mkdir(parents=True, exist_ok=True)
 
     base_cfg = load_config(cfg_path)
-    ds_full, model, _prior0, sampler, _rng, _fc_cfg = _prepare_from_config(base_cfg)
+    ds_full, model, _prior0, sampler, _rng, _fc_cfg = _prepare_from_config(
+        base_cfg, build_full_prior=False
+    )
     vol = model.volatility
-    if vol is None or not vol.enabled or vol.covariance != "diagonal":
+    if candidate_method == "minnesota_canonical" and (
+        vol is not None and vol.enabled and vol.covariance in {"triangular", "factor"}
+    ):
+        raise ValueError(
+            "minnesota_canonical currently supports only homoskedastic models "
+            "and diagonal stochastic volatility"
+        )
+    if candidate_method == "minnesota_tempered" and (
+        vol is None or not vol.enabled or vol.covariance != "diagonal"
+    ):
         raise ValueError(
             "tempered Minnesota origin experiments currently require diagonal stochastic volatility"
         )
@@ -1158,8 +1171,8 @@ def run_minnesota_origin_diagnostic(
         encoding="utf-8",
     )
 
-    _sampler_b, rng_b = _prepare_from_config(baseline_cfg)[3:5]
-    _sampler_c, rng_c = _prepare_from_config(candidate_cfg)[3:5]
+    _sampler_b, rng_b = _prepare_from_config(baseline_cfg, build_full_prior=False)[3:5]
+    _sampler_c, rng_c = _prepare_from_config(candidate_cfg, build_full_prior=False)[3:5]
     prior_b = build_prior(baseline_cfg, dataset=train_ds, model=model)
     prior_c = build_prior(candidate_cfg, dataset=train_ds, model=model)
 
@@ -1328,7 +1341,9 @@ def run_tempered_minnesota_origin_experiment(
     root.mkdir(parents=True, exist_ok=True)
 
     base_cfg = load_config(cfg_path)
-    ds_full, model, _prior0, sampler, _rng, _fc_cfg = _prepare_from_config(base_cfg)
+    ds_full, model, _prior0, sampler, _rng, _fc_cfg = _prepare_from_config(
+        base_cfg, build_full_prior=False
+    )
     bt = build_backtest_config(base_cfg, model=model)
 
     selected_variables = _select_variables(ds_full, variables)

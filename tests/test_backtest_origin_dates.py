@@ -1,5 +1,8 @@
 import numpy as np
 import pandas as pd
+import pytest
+
+from srvar.config import ConfigError
 
 
 def test_backtest_origin_start_end_dates(monkeypatch, tmp_path) -> None:
@@ -60,3 +63,51 @@ def test_backtest_origin_start_end_dates(monkeypatch, tmp_path) -> None:
 
     assert summaries, "expected backtest summary event"
     assert int(summaries[-1]["origins"]) == 3
+
+
+@pytest.mark.parametrize(
+    ("origin_start", "origin_end", "message"),
+    [
+        ("2001-01-01", "2000-08-01", "backtest.origin_start not found in dataset index"),
+        (
+            "2000-10-01",
+            "2000-06-01",
+            "backtest.origin_start/end implies zero feasible forecast origins",
+        ),
+    ],
+)
+def test_backtest_origin_errors_remain_config_errors(
+    monkeypatch, tmp_path, origin_start: str, origin_end: str, message: str
+) -> None:
+    import srvar.config as config_mod
+    from srvar import runner
+
+    csv_path = tmp_path / "data.csv"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2000-01-01", periods=12, freq="MS"),
+            "y": np.arange(12, dtype=float),
+        }
+    ).to_csv(csv_path, index=False)
+    cfg = {
+        "data": {"csv_path": str(csv_path), "date_column": "date", "variables": ["y"]},
+        "model": {"p": 1},
+        "prior": {"family": "niw", "method": "default"},
+        "sampler": {"draws": 2, "burn_in": 0, "thin": 1, "seed": 0},
+        "backtest": {
+            "mode": "expanding",
+            "min_obs": 5,
+            "step": 1,
+            "horizons": [1],
+            "origin_start": origin_start,
+            "origin_end": origin_end,
+        },
+        "evaluation": {"metrics_table": False},
+        "output": {"save_plots": False, "save_forecasts": False},
+    }
+    config_path = tmp_path / "config.yml"
+    config_path.write_text("# load_config is monkeypatched\n", encoding="utf-8")
+    monkeypatch.setattr(config_mod, "load_config", lambda _: cfg)
+
+    with pytest.raises(ConfigError, match=message):
+        runner.backtest_from_config(config_path, out_dir=tmp_path / "out")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +22,9 @@ def _prepare_from_config(
     cfg: dict[str, Any],
     *,
     emit: Callable[[str, dict[str, Any]], None] | None = None,
+    build_full_prior: bool = True,
 ) -> tuple[
-    Dataset, ModelSpec, PriorSpec, SamplerConfig, np.random.Generator, dict[str, Any] | None
+    Dataset, ModelSpec, PriorSpec | None, SamplerConfig, np.random.Generator, dict[str, Any] | None
 ]:
     ds = load_dataset_from_csv(cfg)
     start = None
@@ -67,7 +69,7 @@ def _prepare_from_config(
         if missing:
             raise ConfigError(f"model.elb.applies_to not found in dataset.variables: {missing}")
 
-    prior = build_prior(cfg, dataset=ds, model=model)
+    prior = build_prior(cfg, dataset=ds, model=model) if build_full_prior else None
     prior_cfg = cfg.get("prior", {})
     if emit is not None and isinstance(prior_cfg, dict):
         family = prior_cfg.get("family")
@@ -465,6 +467,11 @@ def build_model(cfg: dict[str, Any], *, dataset: Dataset) -> ModelSpec:
 
 
 def build_prior(cfg: dict[str, Any], *, dataset: Dataset, model: ModelSpec) -> PriorSpec:
+    try:
+        dataset.require_finite_training_values()
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+
     prior_cfg = _get(cfg, "prior", required=True)
     if not isinstance(prior_cfg, dict):
         raise ConfigError("prior must be a mapping")
@@ -783,6 +790,116 @@ def build_backtest_config(cfg: dict[str, Any], *, model: ModelSpec) -> dict[str,
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _BacktestOriginPlan:
+    origins: list[int]
+    first_origin_end: int
+    last_origin_end: int
+
+
+def _compute_backtest_origin_plan(
+    *,
+    first_origin_end: int,
+    last_origin_end: int,
+    step: int,
+) -> _BacktestOriginPlan:
+    """Compute scheduled origins from already validated integer bounds."""
+    return _BacktestOriginPlan(
+        origins=list(range(first_origin_end, last_origin_end + 1, step)),
+        first_origin_end=first_origin_end,
+        last_origin_end=last_origin_end,
+    )
+
+
+def _resolve_backtest_origin_plan(dataset: Dataset, bt: dict[str, Any]) -> _BacktestOriginPlan:
+    """Resolve configured backtest date bounds while preserving CLI error semantics."""
+    max_h = int(max(bt["horizons"]))
+    if dataset.T <= max_h:
+        raise ConfigError("dataset is too short for requested backtest horizons")
+
+    first_origin_end = int(bt["min_obs"]) - 1
+    last_origin_end = dataset.T - max_h - 1
+    if last_origin_end < first_origin_end:
+        raise ConfigError("backtest settings imply zero feasible forecast origins")
+
+    origin_start = bt.get("origin_start")
+    origin_end = bt.get("origin_end")
+    if origin_start is not None or origin_end is not None:
+        if not isinstance(dataset.time_index, pd.DatetimeIndex):
+            raise ConfigError(
+                "backtest.origin_start/end requires a datetime index "
+                "(data.date_column parsed as dates)"
+            )
+
+        if origin_start is not None:
+            ts = pd.to_datetime(origin_start)
+            try:
+                start_loc = dataset.time_index.get_loc(ts)
+                if not isinstance(start_loc, (int, np.integer)):
+                    raise KeyError(ts)
+                start_i = int(start_loc)
+            except KeyError as exc:
+                raise ConfigError(
+                    f"backtest.origin_start not found in dataset index: {origin_start}"
+                ) from exc
+            first_origin_end = max(first_origin_end, start_i)
+
+        if origin_end is not None:
+            ts = pd.to_datetime(origin_end)
+            try:
+                end_loc = dataset.time_index.get_loc(ts)
+                if not isinstance(end_loc, (int, np.integer)):
+                    raise KeyError(ts)
+                end_i = int(end_loc)
+            except KeyError as exc:
+                raise ConfigError(
+                    f"backtest.origin_end not found in dataset index: {origin_end}"
+                ) from exc
+            last_origin_end = min(last_origin_end, end_i)
+
+        if last_origin_end < first_origin_end:
+            raise ConfigError("backtest.origin_start/end implies zero feasible forecast origins")
+
+    return _compute_backtest_origin_plan(
+        first_origin_end=first_origin_end,
+        last_origin_end=last_origin_end,
+        step=int(bt["step"]),
+    )
+
+
+def _backtest_training_bounds(
+    *, mode: str, window: int | None, origin_end: int
+) -> tuple[int, int]:
+    """Return the half-open training slice for one scheduled origin."""
+    if mode == "expanding":
+        train_start = 0
+    else:
+        assert window is not None
+        train_start = max(0, origin_end - window + 1)
+    return train_start, origin_end + 1
+
+
+def _validate_backtest_prior_at_first_origin(
+    cfg: dict[str, Any],
+    *,
+    dataset: Dataset,
+    model: ModelSpec,
+    bt: dict[str, Any],
+) -> None:
+    """Validate the prior on the first training slice without fitting a model."""
+    plan = _resolve_backtest_origin_plan(dataset, bt)
+    origin_end = plan.origins[0]
+    train_start, train_end = _backtest_training_bounds(
+        mode=str(bt["mode"]), window=bt["window"], origin_end=origin_end
+    )
+    train_dataset = Dataset.from_arrays(
+        values=dataset.values[train_start:train_end, :],
+        variables=dataset.variables,
+        time_index=dataset.time_index[train_start:train_end],
+    )
+    build_prior(cfg, dataset=train_dataset, model=model)
+
+
 def build_evaluation_config(
     cfg: dict[str, Any], *, variables: list[str], horizons: list[int]
 ) -> dict[str, Any]:
@@ -985,8 +1102,12 @@ def build_evaluation_config(
 
 
 def validate_config(cfg: dict[str, Any]) -> None:
-    ds, model, _prior, _sampler, _rng, _fc_cfg = _prepare_from_config(cfg, emit=None)
+    has_backtest = "backtest" in cfg
+    ds, model, _prior, _sampler, _rng, _fc_cfg = _prepare_from_config(
+        cfg, emit=None, build_full_prior=not has_backtest
+    )
 
-    if "backtest" in cfg:
+    if has_backtest:
         bt = build_backtest_config(cfg, model=model)
         build_evaluation_config(cfg, variables=list(ds.variables), horizons=list(bt["horizons"]))
+        _validate_backtest_prior_at_first_origin(cfg, dataset=ds, model=model, bt=bt)

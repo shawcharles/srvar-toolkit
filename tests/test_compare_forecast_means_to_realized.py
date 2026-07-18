@@ -8,14 +8,14 @@ from srvar.artifacts import save_forecast_npz
 from srvar.results import ForecastResult
 
 
-def _write_config(path, csv_path) -> None:
+def _write_config(path, csv_path, *, dropna: bool = True) -> None:
     path.write_text(
         f"""\
 data:
   csv_path: {csv_path}
   date_column: date
   variables: [y]
-  dropna: true
+  dropna: {str(dropna).lower()}
 
 model:
   p: 1
@@ -94,7 +94,7 @@ def test_compare_forecast_means_to_realized_script_writes_outputs(tmp_path) -> N
     pd.DataFrame(
         {
             "date": pd.date_range("2000-01-01", periods=6, freq="QS"),
-            "y": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "y": [1.0, 2.0, 3.0, 4.0, 5.0, np.nan],
         }
     ).to_csv(csv_path, index=False)
 
@@ -102,8 +102,8 @@ def test_compare_forecast_means_to_realized_script_writes_outputs(tmp_path) -> N
     candidate_dir = tmp_path / "candidate"
     (baseline_dir / "forecasts").mkdir(parents=True)
     (candidate_dir / "forecasts").mkdir(parents=True)
-    _write_config(baseline_dir / "config.yml", csv_path)
-    _write_config(candidate_dir / "config.yml", csv_path)
+    _write_config(baseline_dir / "config.yml", csv_path, dropna=False)
+    _write_config(candidate_dir / "config.yml", csv_path, dropna=False)
 
     _write_forecast(
         baseline_dir / "forecasts" / "origin_0002.npz", [3.5, 4.5, 3.5, 4.5, 3.5, 4.5, 3.5, 4.5]

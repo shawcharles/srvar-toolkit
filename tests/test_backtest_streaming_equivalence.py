@@ -3,6 +3,9 @@ import math
 
 import numpy as np
 import pandas as pd
+import pytest
+
+from srvar.config import ConfigError
 
 
 def _read_metrics(path):
@@ -224,3 +227,46 @@ def test_backtest_missing_realizations_are_excluded_from_coverage(monkeypatch, t
     assert float(rows_stream[0]["crps"]) == 0.0
     assert float(rows_stream[0]["rmse"]) == 0.0
     assert float(rows_stream[0]["mae"]) == 0.0
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+def test_backtest_rejects_nonfinite_first_training_slice_before_prior_or_fit(
+    monkeypatch, tmp_path, bad_value
+) -> None:
+    import srvar.backtest as backtest
+    import srvar.config as config_mod
+    from srvar import runner
+
+    csv_path = tmp_path / "data.csv"
+    pd.DataFrame(
+        {
+            "date": pd.date_range("2000-01-01", periods=6, freq="MS"),
+            "y": [0.0, bad_value, 2.0, 3.0, 4.0, 5.0],
+        }
+    ).to_csv(csv_path, index=False)
+    cfg = {
+        "data": {
+            "csv_path": str(csv_path),
+            "date_column": "date",
+            "variables": ["y"],
+            "dropna": False,
+        },
+        "model": {"p": 1, "include_intercept": True},
+        "prior": {"family": "niw", "method": "minnesota"},
+        "sampler": {"draws": 2, "burn_in": 0, "thin": 1, "seed": 0},
+        "backtest": {"mode": "expanding", "min_obs": 3, "step": 1, "horizons": [1]},
+        "evaluation": {"metrics_table": False},
+        "output": {"save_plots": False, "save_forecasts": False},
+    }
+    config_path = tmp_path / "config.yml"
+    config_path.write_text("# load_config is monkeypatched\n", encoding="utf-8")
+    monkeypatch.setattr(config_mod, "load_config", lambda _: cfg)
+    monkeypatch.setattr(backtest, "fit", lambda *args, **kwargs: pytest.fail("fit must not run"))
+    monkeypatch.setattr(
+        config_mod.PriorSpec,
+        "niw_minnesota_legacy",
+        lambda *args, **kwargs: pytest.fail("Minnesota prior must not be constructed"),
+    )
+
+    with pytest.raises(ConfigError, match="training data must contain only finite values"):
+        runner.backtest_from_config(config_path, out_dir=tmp_path / "out")

@@ -62,6 +62,8 @@ def fit(
     a numerical initialization choice intended to avoid starting exactly at the truncation
     boundary.
     """
+    dataset.require_finite_training_values()
+
     prior_family = prior.family.lower()
     if prior_family not in {"niw", "ssvs", "blasso", "dl"}:
         raise ValueError("only prior.family in {'niw','ssvs','blasso','dl'} is supported")

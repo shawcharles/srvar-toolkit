@@ -55,7 +55,9 @@ def build_forecast_mean_comparison(
     candidate_dir = Path(candidate_run_dir)
 
     cfg = load_config(baseline_dir / "config.yml")
-    ds_full, _model, _prior0, _sampler, _rng, _fc = _prepare_from_config(cfg)
+    ds_full, _model, _prior0, _sampler, _rng, _fc = _prepare_from_config(
+        cfg, build_full_prior=False
+    )
 
     baseline_files = {
         path.name: path for path in sorted((baseline_dir / "forecasts").glob("origin_*.npz"))

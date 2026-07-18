@@ -34,6 +34,13 @@ srvar fetch-fred config/fetch_fred_demo_config.yaml
 - `config/minimal_config.yaml`: minimal runnable config
 - `config/fetch_fred_demo_config.yaml`: fetch data from FRED to a cached CSV
 
+### Missing values and backtests
+
+`data.dropna: true` drops CSV rows with missing values only; it does not make infinite values
+valid. When `data.dropna: false`, missing targets are allowed only when they fall outside every
+scheduled training slice, for example in the future portion of a backtest. Use `srvar validate`
+to validate that first training slice; `srvar run` remains strict because it fits the full dataset.
+
 ### Schema overview
 
 The top-level keys map directly to the core Python objects:

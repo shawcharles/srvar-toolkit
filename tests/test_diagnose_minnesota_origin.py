@@ -1,12 +1,14 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from srvar.compare import run_minnesota_origin_diagnostic
 
 
-def _write_origin_diagnostic_config(tmp_path) -> tuple[str, str]:
+def _write_origin_diagnostic_config(tmp_path, *, covariance: str | None = "diagonal") -> tuple[str, str]:
     rng = np.random.default_rng(123)
     t = 40
     beta = np.array(
@@ -27,6 +29,17 @@ def _write_origin_diagnostic_config(tmp_path) -> tuple[str, str]:
     csv_path = tmp_path / "data.csv"
     pd.DataFrame({"date": dates, "y1": y[:, 0], "y2": y[:, 1]}).to_csv(csv_path, index=False)
 
+    volatility_block = ""
+    if covariance is not None:
+        volatility_block = f"""\
+  volatility:
+    enabled: true
+    dynamics: rw
+    covariance: {covariance}
+"""
+        if covariance == "factor":
+            volatility_block += "    k_factors: 1\n"
+
     config_path = tmp_path / "origin_backtest.yml"
     config_path.write_text(
         f"""\
@@ -39,10 +52,7 @@ data:
 model:
   p: 1
   include_intercept: true
-  volatility:
-    enabled: true
-    dynamics: rw
-    covariance: diagonal
+{volatility_block}
 
 prior:
   family: niw
@@ -133,3 +143,69 @@ def test_run_minnesota_origin_diagnostic_writes_artifacts_and_tables(tmp_path) -
 
     candidate_cfg = result.candidate_config.read_text(encoding="utf-8")
     assert "method: minnesota_canonical" in candidate_cfg
+
+
+def test_minnesota_origin_diagnostic_allows_canonical_homoskedastic_model(tmp_path) -> None:
+    config_path, origin_date = _write_origin_diagnostic_config(tmp_path, covariance=None)
+
+    result = run_minnesota_origin_diagnostic(
+        config_path,
+        out_root=tmp_path / "homoskedastic_diag",
+        origin_date=origin_date,
+        variables=["y1"],
+        horizons=[1],
+    )
+
+    assert result.metadata_json.exists()
+
+
+@pytest.mark.parametrize("covariance", ["triangular", "factor"])
+def test_minnesota_origin_diagnostic_rejects_canonical_ineligible_sv(tmp_path, covariance: str) -> None:
+    config_path, origin_date = _write_origin_diagnostic_config(tmp_path, covariance=covariance)
+
+    with pytest.raises(ValueError, match="minnesota_canonical currently supports only"):
+        run_minnesota_origin_diagnostic(
+            config_path,
+            out_root=tmp_path / f"{covariance}_diag",
+            origin_date=origin_date,
+        )
+
+
+def test_minnesota_origin_diagnostic_rejects_tempered_homoskedastic_model(tmp_path) -> None:
+    config_path, origin_date = _write_origin_diagnostic_config(tmp_path, covariance=None)
+
+    with pytest.raises(ValueError, match="tempered Minnesota origin experiments"):
+        run_minnesota_origin_diagnostic(
+            config_path,
+            out_root=tmp_path / "tempered_homoskedastic",
+            origin_date=origin_date,
+            candidate_method="minnesota_tempered",
+        )
+
+
+def test_minnesota_origin_diagnostic_absent_origin_date_remains_value_error(tmp_path) -> None:
+    config_path, _origin_date = _write_origin_diagnostic_config(tmp_path)
+
+    with pytest.raises(ValueError, match="origin_date not found in dataset index: 1999-01-01"):
+        run_minnesota_origin_diagnostic(
+            config_path,
+            out_root=tmp_path / "absent_origin_date",
+            origin_date="1999-01-01",
+        )
+
+
+def test_minnesota_origin_diagnostic_zero_origin_window_remains_value_error(tmp_path) -> None:
+    config_path, _origin_date = _write_origin_diagnostic_config(tmp_path)
+    path = Path(config_path)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'origin_end: "2007-01-01"', 'origin_end: "2003-01-01"'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="backtest.origin_start/end implies zero feasible forecast origins"):
+        run_minnesota_origin_diagnostic(
+            config_path,
+            out_root=tmp_path / "zero_origin_window",
+        )

@@ -32,6 +32,15 @@ data:
   dropna: true                     # optional (default: true)
 ```
 
+`dropna: true` removes CSV rows with missing values. Infinite values are never valid training
+data. With `dropna: false`, target values may be missing for later backtest evaluation, but every
+scheduled training slice must contain only finite values. Remove or impute non-finite values, use
+`dropna: true`, or move the backtest origin so its training slice is complete.
+
+For a config containing `backtest`, `srvar validate` validates the prior against the first
+scheduled training slice, so target-only missing future rows are allowed. `srvar run` always fits
+the full dataset and therefore still requires every value to be finite.
+
 ## `model`
 
 ```yaml

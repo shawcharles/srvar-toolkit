@@ -15,6 +15,7 @@ from .config import (
     _as_str_list,
     _get,
     _prepare_from_config,
+    _validate_backtest_prior_at_first_origin,
     build_backtest_config,
     build_evaluation_config,
     build_forecast_config,
@@ -70,12 +71,20 @@ def run_from_config(
 
     emit("stage_start", {"name": "validate_config"})
     t0 = time.perf_counter()
-    ds, model, prior, sampler, rng, fc_cfg = _prepare_from_config(cfg, emit=emit)
+    validate_backtest = validate_only and "backtest" in cfg
+    ds, model, prior, sampler, rng, fc_cfg = _prepare_from_config(
+        cfg, emit=emit, build_full_prior=not validate_backtest
+    )
     emit("stage_end", {"name": "validate_config", "elapsed_s": time.perf_counter() - t0})
     if validate_only:
+        if validate_backtest:
+            bt = build_backtest_config(cfg, model=model)
+            build_evaluation_config(cfg, variables=list(ds.variables), horizons=list(bt["horizons"]))
+            _validate_backtest_prior_at_first_origin(cfg, dataset=ds, model=model, bt=bt)
         emit("validate_end", {"elapsed_s": time.perf_counter() - t0_total})
         return None
 
+    assert prior is not None
     emit("stage_start", {"name": "fit"})
     t0 = time.perf_counter()
     fit_res = fit(ds, model, prior, sampler, rng=rng)

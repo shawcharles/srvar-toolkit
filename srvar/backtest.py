@@ -8,14 +8,15 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 
 from .api import fit, forecast
 from .artifacts import save_forecast_npz
 from .config import (
     ConfigError,
+    _backtest_training_bounds,
     _get,
     _prepare_from_config,
+    _resolve_backtest_origin_plan,
     build_backtest_config,
     build_evaluation_config,
     build_prior,
@@ -46,7 +47,9 @@ def backtest_from_config(
 
     emit("stage_start", {"name": "validate_config"})
     t0 = time.perf_counter()
-    ds_full, model, _prior0, sampler, rng, _fc_cfg = _prepare_from_config(cfg, emit=emit)
+    ds_full, model, _prior0, sampler, rng, _fc_cfg = _prepare_from_config(
+        cfg, emit=emit, build_full_prior=False
+    )
     emit("stage_end", {"name": "validate_config", "elapsed_s": time.perf_counter() - t0})
 
     bt = build_backtest_config(cfg, model=model)
@@ -109,46 +112,8 @@ def backtest_from_config(
     stationarity_tol = float(bt.get("stationarity_tol", 1e-10))
     stationarity_max_draws = bt.get("stationarity_max_draws", None)
 
-    if ds_full.T <= max_h:
-        raise ConfigError("dataset is too short for requested backtest horizons")
-
-    first_origin_end = min_obs - 1
-    last_origin_end = ds_full.T - max_h - 1
-    if last_origin_end < first_origin_end:
-        raise ConfigError("backtest settings imply zero feasible forecast origins")
-
-    origin_start = bt.get("origin_start")
-    origin_end = bt.get("origin_end")
-    if origin_start is not None or origin_end is not None:
-        if not isinstance(ds_full.time_index, pd.DatetimeIndex):
-            raise ConfigError(
-                "backtest.origin_start/end requires a datetime index (data.date_column parsed as dates)"
-            )
-
-        if origin_start is not None:
-            ts = pd.to_datetime(origin_start)
-            try:
-                start_i = int(ds_full.time_index.get_loc(ts))
-            except KeyError as e:
-                raise ConfigError(
-                    f"backtest.origin_start not found in dataset index: {origin_start}"
-                ) from e
-            first_origin_end = max(first_origin_end, start_i)
-
-        if origin_end is not None:
-            ts = pd.to_datetime(origin_end)
-            try:
-                end_i = int(ds_full.time_index.get_loc(ts))
-            except KeyError as e:
-                raise ConfigError(
-                    f"backtest.origin_end not found in dataset index: {origin_end}"
-                ) from e
-            last_origin_end = min(last_origin_end, end_i)
-
-        if last_origin_end < first_origin_end:
-            raise ConfigError("backtest.origin_start/end implies zero feasible forecast origins")
-
-    origins = list(range(first_origin_end, last_origin_end + 1, step))
+    origin_plan = _resolve_backtest_origin_plan(ds_full, bt)
+    origins = origin_plan.origins
     k_orig = int(len(origins))
     n = int(ds_full.N)
 
@@ -189,12 +154,9 @@ def backtest_from_config(
     for i, origin_end_i in enumerate(origins):
         t0_origin = time.perf_counter()
 
-        if mode == "expanding":
-            train_start = 0
-        else:
-            assert window_i is not None
-            train_start = max(0, int(origin_end_i - window_i + 1))
-        train_end_excl = int(origin_end_i + 1)
+        train_start, train_end_excl = _backtest_training_bounds(
+            mode=mode, window=window_i, origin_end=int(origin_end_i)
+        )
 
         train_values = ds_full.values[train_start:train_end_excl, :]
         train_index = ds_full.time_index[train_start:train_end_excl]

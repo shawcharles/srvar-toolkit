@@ -76,7 +76,7 @@ class Dataset:
             raise ValueError("len(variables) must equal values.shape[1]")
 
         if time_index is None:
-            idx = pd.RangeIndex(start=0, stop=x.shape[0], step=1)
+            idx: pd.Index = pd.RangeIndex(start=0, stop=x.shape[0], step=1)
         else:
             idx = time_index if isinstance(time_index, pd.Index) else pd.Index(list(time_index))
             if len(idx) != x.shape[0]:
@@ -92,12 +92,24 @@ class Dataset:
         if len(self.variables) != x.shape[1]:
             raise ValueError("len(variables) must equal values.shape[1]")
 
-        if len(self.time_index) != x.shape[0]:
+        idx = self.time_index if isinstance(self.time_index, pd.Index) else pd.Index(self.time_index)
+        if len(idx) != x.shape[0]:
             raise ValueError("len(time_index) must equal values.shape[0]")
 
+        if idx.has_duplicates:
+            raise ValueError("time_index must be unique; duplicate timestamps are not allowed")
+
         object.__setattr__(self, "values", x)
-        if not isinstance(self.time_index, pd.Index):
-            object.__setattr__(self, "time_index", pd.Index(self.time_index))
+        object.__setattr__(self, "time_index", idx)
+
+    def require_finite_training_values(self) -> None:
+        """Raise if the dataset cannot be used as a complete training sample."""
+        if not np.isfinite(self.values).all():
+            raise ValueError(
+                "training data must contain only finite values; remove or impute non-finite "
+                "values, use data.dropna: true, or move the backtest origin so its training "
+                "slice is complete"
+            )
 
     @property
     def T(self) -> int:

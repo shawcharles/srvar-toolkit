@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from srvar import Dataset, VolatilitySpec
 from srvar.api import fit, forecast
@@ -32,6 +33,18 @@ def test_invariants_phase2_bvar() -> None:
     fc = forecast(fit_res, horizons=[1, 3], draws=30, rng=np.random.default_rng(2024))
     assert fc.draws.shape == (30, 3, ds.N)
     assert fc.latent_draws is None
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+def test_fit_rejects_nonfinite_training_values(bad_value: float) -> None:
+    ds = _toy_dataset()
+    ds.values[0, 0] = bad_value
+    model = ModelSpec(p=1, include_intercept=True)
+    prior = PriorSpec.niw_default(k=1 + ds.N * model.p, n=ds.N)
+    sampler = SamplerConfig(draws=2, burn_in=0, thin=1)
+
+    with pytest.raises(ValueError, match="training data must contain only finite values"):
+        fit(ds, model, prior, sampler, rng=np.random.default_rng(1))
 
 
 def test_invariants_phase3_elb() -> None:
