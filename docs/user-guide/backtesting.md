@@ -191,6 +191,13 @@ For a larger fully local benchmark dataset, first build the quarterly term-sprea
 then run the tracked config:
 
 ```bash
+python -m pip install -e ".[excel]"
+```
+
+The Excel extra is required for the Wu-Xia and vintage-macro preparation commands below because
+they read local `.xlsx` workbooks. It is not required for ordinary CSV-based backtests.
+
+```bash
 python scripts/prepare_term_nfci_benchmark.py --out data/cache/term_nfci_quarterly.csv
 srvar backtest config/term_nfci_backtest.yaml --out outputs/term_nfci_backtest
 srvar backtest config/term_nfci_backtest_homoskedastic.yaml \

@@ -15,14 +15,14 @@ source .venv/bin/activate
 
 python -m pip install -U pip
 
-# CLI + YAML + FRED fetch
-python -m pip install -e ".[cli,fred]"
+# CLI + YAML + FRED fetch + local Excel benchmark workbooks
+python -m pip install -e ".[cli,fred,excel]"
 ```
 
 For development (tests + docs + plotting):
 
 ```bash
-python -m pip install -e ".[dev,cli,fred,docs,plot]"
+python -m pip install -e ".[dev,cli,fred,docs,plot,excel]"
 ```
 
 ## Install from source
@@ -49,6 +49,15 @@ pip install -e ".[cli]"
 
 ```bash
 pip install -e ".[fred]"
+```
+
+## Optional: Excel benchmark workbooks
+
+The local vintage-macro and term-spread/NFCI/Wu-Xia benchmark preparation scripts read tracked
+Excel workbooks. Install the Excel extra before running them:
+
+```bash
+pip install -e ".[excel]"
 ```
 
 ## Install docs dependencies
